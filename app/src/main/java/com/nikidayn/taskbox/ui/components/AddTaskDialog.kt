@@ -10,7 +10,7 @@ import androidx.compose.ui.unit.dp
 import android.app.TimePickerDialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
-import com.nikidayn.taskbox.utils.minutesToTime // Використаємо вашу функцію
+import com.nikidayn.taskbox.utils.minutesToTime
 
 @Composable
 fun AddTaskDialog(
@@ -18,15 +18,14 @@ fun AddTaskDialog(
     onConfirm: (title: String, duration: Int, startTime: Int?) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var durationText by remember { mutableStateOf("30") }
 
-    // Зберігаємо час як Int (хвилини) або null
+    // ЗМІНА: Замість durationText створюємо дві змінні
+    var hoursText by remember { mutableStateOf("") }
+    var minutesText by remember { mutableStateOf("30") } // За замовчуванням 30 хв
+
     var selectedStartTime by remember { mutableStateOf<Int?>(null) }
-
-    // Отримуємо контекст для запуску системного годинника
     val context = LocalContext.current
 
-    // Функція для показу годинника
     val showTimePicker = {
         val calendar = java.util.Calendar.getInstance()
         val currentHour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
@@ -35,12 +34,11 @@ fun AddTaskDialog(
         TimePickerDialog(
             context,
             { _, hourOfDay, minute ->
-                // Конвертуємо вибір у хвилини (наприклад 1:30 -> 90)
                 selectedStartTime = (hourOfDay * 60) + minute
             },
             currentHour,
             currentMinute,
-            true // 24-годинний формат
+            true
         ).show()
     }
 
@@ -56,20 +54,28 @@ fun AddTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                OutlinedTextField(
-                    value = durationText,
-                    onValueChange = {
-                        // Захист від введення не цифр прямо під час друку
-                        if (it.all { char -> char.isDigit() }) {
-                            durationText = it
-                        }
-                    },
-                    label = { Text("Тривалість (хв)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // ЗМІНА: Рядок з двома полями (Години і Хвилини)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = hoursText,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) hoursText = it },
+                        label = { Text("Год") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
 
-                // Кнопка вибору часу замість введення тексту
+                    OutlinedTextField(
+                        value = minutesText,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) minutesText = it },
+                        label = { Text("Хв") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -87,7 +93,6 @@ fun AddTaskDialog(
                     }
                 }
 
-                // Кнопка очищення часу (якщо передумали і хочете у Вхідні)
                 if (selectedStartTime != null) {
                     TextButton(
                         onClick = { selectedStartTime = null },
@@ -101,9 +106,16 @@ fun AddTaskDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val duration = durationText.toIntOrNull() ?: 30
+                    // ЗМІНА: Рахуємо загальну тривалість
+                    val h = hoursText.toIntOrNull() ?: 0
+                    val m = minutesText.toIntOrNull() ?: 0
+                    val totalDuration = (h * 60) + m
+
+                    // Перевіряємо, щоб тривалість була хоча б 5 хвилин (або ваша логіка)
+                    val finalDuration = if (totalDuration > 0) totalDuration else 30
+
                     if (title.isNotBlank()) {
-                        onConfirm(title, duration, selectedStartTime)
+                        onConfirm(title, finalDuration, selectedStartTime)
                     }
                 }
             ) {

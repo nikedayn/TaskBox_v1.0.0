@@ -15,20 +15,27 @@ import com.nikidayn.taskbox.utils.minutesToTime
 
 @Composable
 fun EditTaskDialog(
-    task: Task, // Приймаємо існуюче завдання
+    task: Task,
     onDismiss: () -> Unit,
     onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?) -> Unit
 ) {
-    // Ініціалізуємо змінні даними з завдання
     var title by remember { mutableStateOf(task.title) }
-    var durationText by remember { mutableStateOf(task.durationMinutes.toString()) }
-    var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
 
+    // ЗМІНА: Ініціалізуємо години і хвилини з task.durationMinutes
+    var hoursText by remember {
+        val h = task.durationMinutes / 60
+        mutableStateOf(if (h > 0) h.toString() else "")
+    }
+    var minutesText by remember {
+        val m = task.durationMinutes % 60
+        mutableStateOf(m.toString())
+    }
+
+    var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
     val context = LocalContext.current
 
     val showTimePicker = {
         val calendar = java.util.Calendar.getInstance()
-        // Якщо час вже є, відкриваємо годинник на ньому, якщо ні - на поточному часі
         val initialHour = selectedStartTime?.div(60) ?: calendar.get(java.util.Calendar.HOUR_OF_DAY)
         val initialMinute = selectedStartTime?.rem(60) ?: calendar.get(java.util.Calendar.MINUTE)
 
@@ -55,15 +62,27 @@ fun EditTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                OutlinedTextField(
-                    value = durationText,
-                    onValueChange = {
-                        if (it.all { char -> char.isDigit() }) durationText = it
-                    },
-                    label = { Text("Тривалість (хв)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // ЗМІНА: Два поля для тривалості
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = hoursText,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) hoursText = it },
+                        label = { Text("Год") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    OutlinedTextField(
+                        value = minutesText,
+                        onValueChange = { if (it.all { char -> char.isDigit() }) minutesText = it },
+                        label = { Text("Хв") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -95,9 +114,14 @@ fun EditTaskDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val duration = durationText.toIntOrNull() ?: 30
+                    // ЗМІНА: Збираємо час назад у хвилини
+                    val h = hoursText.toIntOrNull() ?: 0
+                    val m = minutesText.toIntOrNull() ?: 0
+                    val totalDuration = (h * 60) + m
+                    val finalDuration = if (totalDuration > 0) totalDuration else 30
+
                     if (title.isNotBlank()) {
-                        onConfirm(title, duration, selectedStartTime)
+                        onConfirm(title, finalDuration, selectedStartTime)
                     }
                 }
             ) {

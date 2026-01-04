@@ -22,6 +22,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Arrangement
 
 // ВАШІ КОМПОНЕНТИ (Переконайтеся, що ці файли існують у папках)
 import com.nikidayn.taskbox.ui.TemplatesScreen
@@ -114,6 +119,8 @@ fun TaskScreen(viewModel: TaskViewModel) {
     val timelineTasks = taskList.filter { it.startTimeMinutes != null }.sortedBy { it.startTimeMinutes }
     val inboxTasks = taskList.filter { it.startTimeMinutes == null }
 
+    var isInboxExpanded by remember { mutableStateOf(true) }
+
     fun toggleSelection(taskId: Int) {
         selectedIds = if (selectedIds.contains(taskId)) {
             selectedIds - taskId
@@ -184,38 +191,61 @@ fun TaskScreen(viewModel: TaskViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 1. Секція Вхідних (зверху, фіксована)
+            // 1. Секція Вхідних (ОНОВЛЕНО)
             if (inboxTasks.isNotEmpty()) {
-                Text(
-                    text = "Вхідні (${inboxTasks.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                // Заголовок тепер клікабельний і має стрілочку
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isInboxExpanded = !isInboxExpanded } // Клік перемикає стан
+                        .padding(horizontal = 16.dp, vertical = 8.dp), // Зручні відступи для пальця
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Вхідні (${inboxTasks.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
-                // Вхідні показуємо звичайним списком (висота обмежена, щоб не займати весь екран)
-                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                    itemsIndexed(inboxTasks) { _, task ->
-                        val isSelected = selectedIds.contains(task.id)
-                        TimelineItem(
-                            task = task,
-                            isLast = true,
-                            isSelected = isSelected,
-                            onCheck = {
-                                if (!isSelectionMode) viewModel.toggleComplete(task)
-                                else toggleSelection(task.id)
-                            },
-                            onClick = {
-                                if (isSelectionMode) toggleSelection(task.id)
-                                else taskToEdit = task
-                            },
-                            onLongClick = { if (!isSelectionMode) toggleSelection(task.id) },
-                            onTimeChange = { newTime -> viewModel.changeTaskStartTime(task, newTime) }
-                        )
-                    }
+                    // Іконка змінюється залежно від стану
+                    Icon(
+                        imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isInboxExpanded) "Згорнути" else "Розгорнути",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                // Показуємо список ТІЛЬКИ якщо isInboxExpanded == true
+                if (isInboxExpanded) {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 200.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(inboxTasks) { _, task ->
+                            val isSelected = selectedIds.contains(task.id)
+                            TimelineItem(
+                                task = task,
+                                isLast = true,
+                                isSelected = isSelected,
+                                onCheck = {
+                                    if (!isSelectionMode) viewModel.toggleComplete(task)
+                                    else toggleSelection(task.id)
+                                },
+                                onClick = {
+                                    if (isSelectionMode) toggleSelection(task.id)
+                                    else taskToEdit = task
+                                },
+                                onLongClick = { if (!isSelectionMode) toggleSelection(task.id) },
+                                onTimeChange = { newTime -> viewModel.changeTaskStartTime(task, newTime) }
+                            )
+                        }
+                    }
+                    // Розділювач теж ховаємо, якщо список згорнутий
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                }
             }
 
             // 2. Секція Таймлайну (Новий DayView)
