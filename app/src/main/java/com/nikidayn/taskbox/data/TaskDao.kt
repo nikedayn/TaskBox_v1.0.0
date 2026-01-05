@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Transaction
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.model.Note
 import kotlinx.coroutines.flow.Flow
@@ -53,4 +54,20 @@ interface TaskDao {
 
     @Delete
     suspend fun deleteNote(note: Note)
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks()
+
+    @Query("DELETE FROM templates")
+    suspend fun deleteAllTemplates()
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAllNotes()
+
+    @Transaction
+    suspend fun clearAllData() {
+        deleteAllTasks()
+        deleteAllTemplates()
+        deleteAllNotes()
+    }
 }

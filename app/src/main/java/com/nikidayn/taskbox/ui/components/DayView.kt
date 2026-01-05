@@ -18,81 +18,104 @@ import com.nikidayn.taskbox.model.Task
 @Composable
 fun DayView(
     tasks: List<Task>,
+    startHour: Int = 8,
+    endHour: Int = 20,
+    modifier: Modifier = Modifier, // 1. Приймаємо модифікатор (вагу)
     onTaskClick: (Task) -> Unit,
     onTaskCheck: (Task) -> Unit,
     onTaskTimeChange: (Task, Int) -> Unit
 ) {
-    // ВАЖЛИВО: Залишаємо 120.dp, якщо ви хочете "великий" масштаб
     val hourHeight = 240.dp
-    val hoursInDay = 24
+    val hoursToShow = endHour - startHour
+    val totalHeight = hourHeight * (hoursToShow + 1)
 
-    val totalHeight = hourHeight * hoursInDay
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val pxPerHour = with(density) { hourHeight.toPx() }
 
+    // 2. Головний контейнер тепер гнучкий і має скрол
     Box(
-        modifier = Modifier
+        modifier = modifier // Сюди прийде вага (weight) з MainActivity
             .fillMaxWidth()
-            .height(totalHeight)
-            .verticalScroll(scrollState)
+            .verticalScroll(scrollState) // Скрол тут
             .background(Color.White)
     ) {
-        // 1. Сітка часу
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            for (i in 0..hoursInDay) {
-                val y = i * pxPerHour
-                drawLine(
-                    color = Color.LightGray.copy(alpha = 0.5f),
-                    start = Offset(60.dp.toPx(), y),
-                    end = Offset(width, y),
-                    strokeWidth = 1.dp.toPx()
-                )
-            }
-        }
+        // 3. Колонка для додавання відступу зверху
+        Column(modifier = Modifier.fillMaxWidth()) {
 
-        // 2. Цифри годин
-        Column(modifier = Modifier.fillMaxSize()) {
-            repeat(hoursInDay + 1) { hour ->
-                Box(modifier = Modifier.height(hourHeight)) {
-                    Text(
-                        text = String.format("%02d:00", hour),
-                        fontSize = 12.sp,
-                        color = Color.Gray,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .offset(y = (-8).dp)
-                    )
-                }
-            }
-        }
+            // --- ОСЬ ВІН, ВІДСТУП ЗВЕРХУ (всередині скролу) ---
+            Spacer(modifier = Modifier.height(32.dp))
+            // -----------------------------------------------
 
-        // 3. Завдання
-        tasks.forEach { task ->
-            val startMinutes = task.startTimeMinutes ?: 0
-            val offsetDp = (startMinutes.toFloat() / 60f) * hourHeight.value
-
+            // 4. А ось тут вже сама величезна сітка
             Box(
                 modifier = Modifier
-                    .padding(start = 60.dp, end = 16.dp)
                     .fillMaxWidth()
-                    .offset(y = offsetDp.dp)
+                    .height(totalHeight) // Фіксуємо висоту тільки для контенту
             ) {
-                TimelineItem(
-                    task = task,
-                    onCheck = { onTaskCheck(task) },
-                    onClick = { onTaskClick(task) },
-                    onLongClick = {},
-                    onTimeChange = { newMinutes ->
-                        // --- ВИПРАВЛЕННЯ ТУТ ---
-                        // Ми прибрали snapping ((newMinutes / 15) * 15)
-                        // Тепер передаємо "сирі" хвилини, лише обмежуємо діапазоном доби
-                        val clampedMinutes = newMinutes.coerceIn(0, 1439)
-                        onTaskTimeChange(task, clampedMinutes)
+                // СІТКА
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val width = size.width
+                    for (i in 0..hoursToShow) {
+                        val y = i * pxPerHour
+                        drawLine(
+                            color = Color.LightGray.copy(alpha = 0.5f),
+                            start = Offset(60.dp.toPx(), y),
+                            end = Offset(width, y),
+                            strokeWidth = 1.dp.toPx()
+                        )
                     }
-                )
+                }
+
+                // ЦИФРИ
+                Column(modifier = Modifier.fillMaxSize()) {
+                    repeat(hoursToShow + 1) { i ->
+                        val displayHour = startHour + i
+                        Box(modifier = Modifier.height(hourHeight)) {
+                            Text(
+                                text = String.format("%02d:00", displayHour),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .offset(y = (-8).dp) // Текст піднятий, але завдяки Spacer(32dp) він не обріжеться
+                            )
+                        }
+                    }
+                }
+
+                // ЗАВДАННЯ
+                tasks.forEach { task ->
+                    val startMinutes = task.startTimeMinutes ?: 0
+                    val startHourOfTask = startMinutes / 60.0
+
+                    if (startHourOfTask >= startHour) {
+                        val offsetDp = ((startHourOfTask - startHour).toFloat()) * hourHeight.value
+
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 60.dp, end = 16.dp)
+                                .fillMaxWidth()
+                                .offset(y = offsetDp.dp)
+                        ) {
+                            TimelineItem(
+                                task = task,
+                                minTime = startHour * 60, // <-- ПЕРЕДАЄМО МІНІМУМ (у хвилинах)
+                                onCheck = { onTaskCheck(task) },
+                                onClick = { onTaskClick(task) },
+                                onLongClick = {},
+                                onTimeChange = { newMinutes ->
+                                    val clampedMinutes = newMinutes.coerceIn(0, 1439)
+                                    onTaskTimeChange(task, clampedMinutes)
+                                }
+                            )
+                        }
+                    }
+                }
             }
+
+            // Можна додати відступ і знизу
+            Spacer(modifier = Modifier.height(50.dp))
         }
     }
 }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -23,15 +22,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.nikidayn.taskbox.model.Task
+import com.nikidayn.taskbox.utils.formatDuration
 import com.nikidayn.taskbox.utils.minutesToTime
 import kotlin.math.roundToInt
-
-import com.nikidayn.taskbox.utils.formatDuration
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineItem(
     task: Task,
+    minTime: Int = 0, // 1. НОВИЙ ПАРАМЕТР: Мінімальний час (у хвилинах)
     isLast: Boolean = false,
     isSelected: Boolean = false,
     onCheck: () -> Unit,
@@ -40,9 +39,9 @@ fun TimelineItem(
     onTimeChange: (Int) -> Unit
 ) {
     val density = LocalDensity.current
-    val pixelsPerMinute = with(density) { 4.dp.toPx() }
+    val heightPerMinute = 4.dp // Ваш масштаб
+    val pixelsPerMinute = with(density) { heightPerMinute.toPx() }
 
-    val heightPerMinute = 4.dp
     val computedHeight = (task.durationMinutes * heightPerMinute.value).dp.coerceAtLeast(60.dp)
 
     var offsetY by remember { mutableFloatStateOf(0f) }
@@ -56,7 +55,6 @@ fun TimelineItem(
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
     val borderWidth = if (isSelected) 2.dp else 0.dp
 
-    // Визначаємо, чи показувати плашку часу (якщо є час або тягнемо)
     val showTimePill = task.startTimeMinutes != null || isDragging
 
     Row(
@@ -70,11 +68,7 @@ fun TimelineItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(computedHeight)
-                // ВИПРАВЛЕННЯ ТУТ:
-                // Було: .padding(bottom = 16.dp, end = 16.dp)
-                // Стало: bottom = 2.dp (мікро-відступ), end = 16.dp (відступ справа)
                 .padding(bottom = 2.dp, end = 16.dp)
-
                 .offset { IntOffset(0, offsetY.roundToInt()) }
                 .clip(RoundedCornerShape(16.dp))
                 .combinedClickable(
@@ -90,9 +84,6 @@ fun TimelineItem(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        // ЗМЕНШЕНО ВІДСТУПИ:
-                        // vertical = 4.dp (було 8), щоб дати більше місця тексту по висоті
-                        // horizontal = 8.dp (збоку)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
@@ -103,10 +94,7 @@ fun TimelineItem(
                             .weight(1f)
                             .padding(start = 4.dp)
                     ) {
-                        // Якщо є плашка часу:
                         if (showTimePill) {
-                            // Якщо завдання дуже коротке (<= 30 хв), Spacer завеликий.
-                            // Робимо його меншим (20.dp), щоб текст вліз.
                             Spacer(modifier = Modifier.height(20.dp))
                         }
 
@@ -117,18 +105,16 @@ fun TimelineItem(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        // ЗМІНА ТУТ: Використовуємо formatDuration замість просто тексту "хв"
                         if (task.durationMinutes > 45 || !showTimePill) {
                             Text(
-                                text = formatDuration(task.durationMinutes), // <--- Оновлено
+                                text = formatDuration(task.durationMinutes),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1
                             )
                         }
                     }
 
-                    // ПРАВА ЧАСТИНА (Чекбокс і Ручка)
-                    // Центруємо їх по вертикалі
+                    // ПРАВА ЧАСТИНА
                     Column(
                         modifier = Modifier.fillMaxHeight(),
                         verticalArrangement = Arrangement.Center
@@ -151,13 +137,20 @@ fun TimelineItem(
                                             detectDragGestures(
                                                 onDragStart = {
                                                     isDragging = true
-                                                    previewTime = minutesToTime(task.startTimeMinutes ?: 0)
+                                                    // Якщо час null (Вхідні), показуємо minTime як старт
+                                                    val start = task.startTimeMinutes ?: minTime
+                                                    previewTime = minutesToTime(start)
                                                 },
                                                 onDragEnd = {
                                                     isDragging = false
                                                     val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
-                                                    val currentStart = task.startTimeMinutes ?: 0
-                                                    val newStart = currentStart + minutesChange
+
+                                                    // 2. БАЗОВИЙ ЧАС: Якщо null, беремо minTime
+                                                    val baseTime = task.startTimeMinutes ?: minTime
+
+                                                    // 3. ОБМЕЖЕННЯ: Не менше minTime
+                                                    val newStart = (baseTime + minutesChange).coerceIn(minTime, 1439)
+
                                                     offsetY = 0f
                                                     onTimeChange(newStart)
                                                 },
@@ -168,9 +161,12 @@ fun TimelineItem(
                                                 onDrag = { change, dragAmount ->
                                                     change.consume()
                                                     offsetY += dragAmount.y
+
                                                     val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
-                                                    val currentStart = task.startTimeMinutes ?: 0
-                                                    val rawNewTime = (currentStart + minutesChange).coerceIn(0, 1439)
+                                                    val baseTime = task.startTimeMinutes ?: minTime
+
+                                                    // Обмежуємо прев'ю теж
+                                                    val rawNewTime = (baseTime + minutesChange).coerceIn(minTime, 1439)
                                                     previewTime = minutesToTime(rawNewTime)
                                                 }
                                             )
@@ -181,20 +177,19 @@ fun TimelineItem(
                     }
                 }
 
-                // ПЛАШКА З ЧАСОМ
                 if (showTimePill) {
-                    val timeToShow = if (isDragging) previewTime else minutesToTime(task.startTimeMinutes ?: 0)
+                    // Якщо тягнемо - показуємо прев'ю, якщо ні - реальний час (або minTime для краси, якщо раптом null проскочить)
+                    val timeToShow = if (isDragging) previewTime else minutesToTime(task.startTimeMinutes ?: minTime)
 
                     Surface(
                         color = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
-                        // Трохи менший шрифт і відступи, щоб було компактніше
                         shape = RoundedCornerShape(topStart = 16.dp, bottomEnd = 8.dp),
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
                         Text(
                             text = timeToShow,
-                            style = MaterialTheme.typography.labelMedium, // labelMedium менший за labelLarge
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )

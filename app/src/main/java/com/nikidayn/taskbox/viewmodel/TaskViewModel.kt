@@ -1,5 +1,9 @@
 package com.nikidayn.taskbox.viewmodel
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,15 +11,22 @@ import com.nikidayn.taskbox.TaskBoxApplication
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.model.Note
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.google.gson.Gson
+import com.nikidayn.taskbox.model.BackupData
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
 import com.nikidayn.taskbox.model.TaskTemplate
+import com.nikidayn.taskbox.utils.UserPreferences
 
 class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dao = (application as TaskBoxApplication).database.taskDao()
-
+    private val prefs = UserPreferences(application)
     val tasks: StateFlow<List<Task>> = dao.getAllTasks()
         .stateIn(
             scope = viewModelScope,
@@ -128,4 +139,73 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteNote(note: Note) {
         viewModelScope.launch { dao.deleteNote(note) }
     }
+
+    // --- НАЛАШТУВАННЯ ---
+
+    // Стан теми
+    private val _themeMode = MutableStateFlow(prefs.getThemeMode())
+    val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
+
+    fun updateTheme(mode: Int) {
+        prefs.setThemeMode(mode)
+        _themeMode.value = mode
+    }
+
+    // Робочі години
+    private val _workHours = MutableStateFlow(prefs.getStartHour() to prefs.getEndHour())
+    val workHours: StateFlow<Pair<Float, Float>> = _workHours.asStateFlow()
+
+    fun updateWorkHours(start: Float, end: Float) {
+        prefs.setStartHour(start)
+        prefs.setEndHour(end)
+        _workHours.value = start to end
+    }
+
+    // --- РОБОТА З ДАНИМИ ---
+
+    fun deleteAllData() {
+        viewModelScope.launch {
+            dao.clearAllData()
+        }
+    }
+
+    // 1. Генеруємо JSON з усіх даних
+    suspend fun createBackupJson(): String = withContext(Dispatchers.IO) {
+        // Збираємо поточні дані напряму з бази (через flow.first() або додайте прості suspend методи в DAO)
+        // Для простоти, оскільки у нас Flow, ми можемо взяти поточні значення зі StateFlow, якщо вони завантажені,
+        // але надійніше додати в DAO методи getList...
+        // Давайте використаємо поточні значення зі StateFlow, які ми вже маємо в пам'яті:
+        val backup = BackupData(
+            tasks = tasks.value,
+            templates = templates.value,
+            notes = notes.value
+        )
+        return@withContext Gson().toJson(backup)
+    }
+
+    // 2. Відновлюємо дані з JSON
+    fun restoreBackup(inputStream: InputStream, onSuccess: () -> Unit, onError: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val reader = BufferedReader(InputStreamReader(inputStream))
+                val jsonString = reader.readText()
+                val backup = Gson().fromJson(jsonString, BackupData::class.java)
+
+                // Очищаємо базу і записуємо нове
+                dao.clearAllData()
+
+                backup.tasks.forEach { dao.insertTask(it) }
+                backup.templates.forEach { dao.insertTemplate(it) }
+                backup.notes.forEach { dao.insertNote(it) }
+
+                withContext(Dispatchers.Main) { onSuccess() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) { onError() }
+            }
+        }
+    }
+
+    fun exportData() { /* Логіка експорту JSON */ }
+    fun importData() { /* Логіка імпорту JSON */ }
 }

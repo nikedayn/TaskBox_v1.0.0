@@ -23,9 +23,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.nikidayn.taskbox.ui.TemplatesScreen
 import com.nikidayn.taskbox.ui.components.*
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
+import com.nikidayn.taskbox.ui.theme.TaskBoxTheme
+import com.nikidayn.taskbox.ui.SettingsScreen
 import androidx.compose.material.icons.filled.Description
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -36,7 +40,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val viewModel: TaskViewModel by viewModels()
-        setContent { MaterialTheme { MainAppStructure(viewModel) } }
+
+        setContent {
+            // ОТРИМУЄМО ТЕМУ З VIEWMODEL
+            val themeMode by viewModel.themeMode.collectAsState()
+
+            // Визначаємо, чи темна тема:
+            // 0 - системна (залежить від налаштувань телефону)
+            // 1 - світла (false)
+            // 2 - темна (true)
+            val useDarkTheme = when (themeMode) {
+                1 -> false
+                2 -> true
+                else -> isSystemInDarkTheme()
+            }
+
+            // Передаємо параметр darkTheme
+            TaskBoxTheme(darkTheme = useDarkTheme) {
+                MainAppStructure(viewModel)
+            }
+        }
     }
 }
 
@@ -77,8 +100,16 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
                     label = { Text("Шаблони") },
                     selected = currentRoute == "templates",
+                    onClick = { navController.navigate("templates") { launchSingleTop = true; restoreState = true } }
+                )
+
+                // 4. НАЛАШТУВАННЯ
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Settings, null) },
+                    label = { Text("Опції") },
+                    selected = currentRoute == "settings",
                     onClick = {
-                        navController.navigate("templates") {
+                        navController.navigate("settings") {
                             popUpTo("timeline") { saveState = true }
                             launchSingleTop = true
                             restoreState = true
@@ -100,6 +131,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 com.nikidayn.taskbox.ui.NotesScreen(viewModel)
             }
             composable("templates") { TemplatesScreen(viewModel) }
+            composable("settings") { SettingsScreen(viewModel) }
         }
     }
 }
@@ -108,6 +140,11 @@ fun MainAppStructure(viewModel: TaskViewModel) {
 @Composable
 fun TaskScreen(viewModel: TaskViewModel) {
     val taskList by viewModel.tasks.collectAsState()
+
+    // ОТРИМУЄМО НАЛАШТУВАННЯ
+    val workHours by viewModel.workHours.collectAsState()
+    val startH = workHours.first.toInt()
+    val endH = workHours.second.toInt()
 
     // --- ЛОГІКА КАЛЕНДАРЯ ---
     // Початкова дата для пейджера (середина величезного списку)
@@ -262,7 +299,10 @@ fun TaskScreen(viewModel: TaskViewModel) {
                         ) {
                             itemsIndexed(inboxTasks) { _, task ->
                                 TimelineItem(
-                                    task = task, isLast = true, isSelected = false,
+                                    task = task,
+                                    minTime = startH * 60,
+                                    isLast = true,
+                                    isSelected = false,
                                     onCheck = { viewModel.toggleComplete(task) },
                                     onClick = { taskToEdit = task },
                                     onLongClick = { },
@@ -274,9 +314,14 @@ fun TaskScreen(viewModel: TaskViewModel) {
                     }
                 }
 
-                // Таймлайн
+                // --- ТАЙМЛАЙН ---
                 DayView(
                     tasks = timelineTasks,
+                    startHour = startH,
+                    endHour = endH,
+                    // ВАЖЛИВО: weight(1f) змушує календар вписатися в екран і активувати скрол
+                    modifier = Modifier.weight(1f),
+
                     onTaskCheck = { viewModel.toggleComplete(it) },
                     onTaskClick = { taskToEdit = it },
                     onTaskTimeChange = { task, newTime -> viewModel.changeTaskStartTime(task, newTime) }
