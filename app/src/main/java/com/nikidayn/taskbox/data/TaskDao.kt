@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.nikidayn.taskbox.model.Task
+import com.nikidayn.taskbox.model.Note
 import kotlinx.coroutines.flow.Flow
 import com.nikidayn.taskbox.model.TaskTemplate
 
@@ -40,4 +41,16 @@ interface TaskDao {
 
     @Delete
     suspend fun deleteTasks(tasks: List<Task>)
+
+    @Query("SELECT * FROM notes ORDER BY id DESC")
+    fun getAllNotes(): Flow<List<Note>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNote(note: Note)
+
+    @Update
+    suspend fun updateNote(note: Note)
+
+    @Delete
+    suspend fun deleteNote(note: Note)
 }

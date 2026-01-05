@@ -3,6 +3,8 @@ package com.nikidayn.taskbox.ui.components
 import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons                // <--- Додайте імпорт
+import androidx.compose.material.icons.filled.Delete       // <--- Додайте імпорт
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,21 +19,13 @@ import com.nikidayn.taskbox.utils.minutesToTime
 fun EditTaskDialog(
     task: Task,
     onDismiss: () -> Unit,
-    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?) -> Unit
+    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?) -> Unit,
+    onDelete: () -> Unit // <--- 1. НОВИЙ ПАРАМЕТР
 ) {
     var title by remember { mutableStateOf(task.title) }
-
-    // ЗМІНА: Ініціалізуємо години і хвилини з task.durationMinutes
-    var hoursText by remember {
-        val h = task.durationMinutes / 60
-        mutableStateOf(if (h > 0) h.toString() else "")
-    }
-    var minutesText by remember {
-        val m = task.durationMinutes % 60
-        mutableStateOf(m.toString())
-    }
-
+    var durationText by remember { mutableStateOf(task.durationMinutes.toString()) }
     var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
+
     val context = LocalContext.current
 
     val showTimePicker = {
@@ -52,8 +46,25 @@ fun EditTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = "Редагувати справу") },
+        // 2. ЗМІНЮЄМО ЗАГОЛОВОК: додаємо Row з іконкою видалення
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "Редагувати справу")
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Видалити",
+                        tint = MaterialTheme.colorScheme.error // Червоний колір
+                    )
+                }
+            }
+        },
         text = {
+            // ... (Вміст залишається без змін)
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = title,
@@ -62,27 +73,15 @@ fun EditTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // ЗМІНА: Два поля для тривалості
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = hoursText,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) hoursText = it },
-                        label = { Text("Год") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    OutlinedTextField(
-                        value = minutesText,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) minutesText = it },
-                        label = { Text("Хв") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                OutlinedTextField(
+                    value = durationText,
+                    onValueChange = {
+                        if (it.all { char -> char.isDigit() }) durationText = it
+                    },
+                    label = { Text("Тривалість (хв)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -114,14 +113,9 @@ fun EditTaskDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    // ЗМІНА: Збираємо час назад у хвилини
-                    val h = hoursText.toIntOrNull() ?: 0
-                    val m = minutesText.toIntOrNull() ?: 0
-                    val totalDuration = (h * 60) + m
-                    val finalDuration = if (totalDuration > 0) totalDuration else 30
-
+                    val duration = durationText.toIntOrNull() ?: 30
                     if (title.isNotBlank()) {
-                        onConfirm(title, finalDuration, selectedStartTime)
+                        onConfirm(title, duration, selectedStartTime)
                     }
                 }
             ) {

@@ -4,17 +4,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,30 +23,20 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.Arrangement
-
-// ВАШІ КОМПОНЕНТИ (Переконайтеся, що ці файли існують у папках)
 import com.nikidayn.taskbox.ui.TemplatesScreen
-import com.nikidayn.taskbox.ui.components.AddTaskDialog
-import com.nikidayn.taskbox.ui.components.EditTaskDialog
-import com.nikidayn.taskbox.ui.components.TimelineItem
-import com.nikidayn.taskbox.ui.components.DayView // <--- НОВИЙ КОМПОНЕНТ
+import com.nikidayn.taskbox.ui.components.*
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
+import androidx.compose.material.icons.filled.Description
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val viewModel: TaskViewModel by viewModels()
-
-        setContent {
-            MaterialTheme {
-                MainAppStructure(viewModel)
-            }
-        }
+        setContent { MaterialTheme { MainAppStructure(viewModel) } }
     }
 }
 
@@ -59,21 +50,31 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
+                // 1. Календар
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("Таймлайн") },
+                    icon = { Icon(Icons.Default.Home, null) },
+                    label = { Text("Календар") },
                     selected = currentRoute == "timeline",
+                    onClick = { navController.navigate("timeline") { launchSingleTop = true; restoreState = true } }
+                )
+
+                // 2. Нотатки (НОВЕ)
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Description, null) }, // Виберіть іконку
+                    label = { Text("Нотатки") },
+                    selected = currentRoute == "notes",
                     onClick = {
-                        navController.navigate("timeline") {
-                            popUpTo("timeline") { saveState = true }
+                        navController.navigate("notes") {
+                            popUpTo("timeline") { saveState = true } // Зберігаємо стан календаря
                             launchSingleTop = true
                             restoreState = true
                         }
                     }
                 )
 
+                // 3. Шаблони
                 NavigationBarItem(
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
                     label = { Text("Шаблони") },
                     selected = currentRoute == "templates",
                     onClick = {
@@ -92,83 +93,106 @@ fun MainAppStructure(viewModel: TaskViewModel) {
             startDestination = "timeline",
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("timeline") {
-                // Викликаємо функцію, яка написана нижче в цьому ж файлі
-                TaskScreen(viewModel)
+            composable("timeline") { TaskScreen(viewModel) }
+            // Додаємо новий екран сюди
+            composable("notes") {
+                // Не забудьте імпортувати NotesScreen
+                com.nikidayn.taskbox.ui.NotesScreen(viewModel)
             }
-            composable("templates") {
-                TemplatesScreen(viewModel)
-            }
+            composable("templates") { TemplatesScreen(viewModel) }
         }
     }
 }
 
-// --- ОСЬ ВОНА: ФУНКЦІЯ TASK SCREEN ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskScreen(viewModel: TaskViewModel) {
     val taskList by viewModel.tasks.collectAsState()
 
-    // СТАНИ
-    var showAddDialog by remember { mutableStateOf(false) }
-    var taskToEdit by remember { mutableStateOf<com.nikidayn.taskbox.model.Task?>(null) }
-    var selectedIds by remember { mutableStateOf(setOf<Int>()) }
-    val isSelectionMode = selectedIds.isNotEmpty()
+    // --- ЛОГІКА КАЛЕНДАРЯ ---
+    // Початкова дата для пейджера (середина величезного списку)
+    val initialDate = remember { LocalDate.now() }
+    val initialPage = Int.MAX_VALUE / 2
 
-    // Сортування списків
-    val timelineTasks = taskList.filter { it.startTimeMinutes != null }.sortedBy { it.startTimeMinutes }
-    val inboxTasks = taskList.filter { it.startTimeMinutes == null }
+    // Пейджер
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
+    val scope = rememberCoroutineScope()
 
-    var isInboxExpanded by remember { mutableStateOf(true) }
+    // Обчислюємо поточну дату на основі сторінки
+    val currentDate = remember(pagerState.currentPage) {
+        val daysDiff = pagerState.currentPage - initialPage
+        initialDate.plusDays(daysDiff.toLong())
+    }
 
-    fun toggleSelection(taskId: Int) {
-        selectedIds = if (selectedIds.contains(taskId)) {
-            selectedIds - taskId
-        } else {
-            selectedIds + taskId
+    // Стан для DatePicker
+    var showDatePicker by remember { mutableStateOf(false) }
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = currentDate.toEpochDay() * 24 * 60 * 60 * 1000
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val selectedMillis = datePickerState.selectedDateMillis
+                    if (selectedMillis != null) {
+                        val selectedDate = LocalDate.ofEpochDay(selectedMillis / (24 * 60 * 60 * 1000))
+                        val daysDiff = java.time.temporal.ChronoUnit.DAYS.between(initialDate, selectedDate).toInt()
+                        scope.launch { pagerState.scrollToPage(initialPage + daysDiff) }
+                    }
+                    showDatePicker = false
+                }) { Text("ОК") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Скасувати") } }
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
 
+    // --- СТАНИ ---
+    var showAddDialog by remember { mutableStateOf(false) }
+    var taskToEdit by remember { mutableStateOf<com.nikidayn.taskbox.model.Task?>(null) }
+
+    // Форматування дати для заголовка
+    val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
+
     Scaffold(
         topBar = {
-            if (isSelectionMode) {
-                TopAppBar(
-                    title = { Text("${selectedIds.size} вибрано") },
-                    navigationIcon = {
-                        IconButton(onClick = { selectedIds = emptySet() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close")
-                        }
-                    },
-                    actions = {
+            TopAppBar(
+                title = {
+                    Row(
+                        modifier = Modifier.clickable { showDatePicker = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(currentDate.format(dateFormatter), fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Date")
+                    }
+                },
+                actions = {
+                    // Кнопка "Сьогодні"
+                    if (currentDate != LocalDate.now()) {
                         IconButton(onClick = {
-                            val tasksToDelete = taskList.filter { it.id in selectedIds }
-                            viewModel.deleteTasks(tasksToDelete)
-                            selectedIds = emptySet()
+                            scope.launch { pagerState.animateScrollToPage(initialPage) }
                         }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                            Icon(Icons.Default.Today, contentDescription = "Today")
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                )
-            }
+                    }
+                }
+            )
         },
         floatingActionButton = {
-            if (!isSelectionMode) {
-                FloatingActionButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add")
-                }
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
             }
         }
     ) { innerPadding ->
 
-        // ДІАЛОГИ
         if (showAddDialog) {
             AddTaskDialog(
+                selectedDate = currentDate.toString(),
                 onDismiss = { showAddDialog = false },
-                onConfirm = { title, duration, start ->
-                    viewModel.addTask(title, duration, start)
+                onConfirm = { title, duration, start, date ->
+                    viewModel.addTask(title, duration, start, date)
                     showAddDialog = false
                 }
             )
@@ -178,86 +202,86 @@ fun TaskScreen(viewModel: TaskViewModel) {
             EditTaskDialog(
                 task = taskToEdit!!,
                 onDismiss = { taskToEdit = null },
-                onConfirm = { newTitle, newDuration, newStart ->
-                    viewModel.updateTaskDetails(taskToEdit!!, newTitle, newDuration, newStart)
+                onConfirm = { newTitle, newDur, newStart ->
+                    viewModel.updateTaskDetails(taskToEdit!!, newTitle, newDur, newStart)
+                    taskToEdit = null
+                },
+                onDelete = {
+                    viewModel.deleteTask(taskToEdit!!)
                     taskToEdit = null
                 }
             )
         }
 
-        // ГОЛОВНИЙ ВМІСТ
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            // 1. Секція Вхідних (ОНОВЛЕНО)
-            if (inboxTasks.isNotEmpty()) {
-                // Заголовок тепер клікабельний і має стрілочку
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { isInboxExpanded = !isInboxExpanded } // Клік перемикає стан
-                        .padding(horizontal = 16.dp, vertical = 8.dp), // Зручні відступи для пальця
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Вхідні (${inboxTasks.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+        // --- PAGER З ДНЯМИ ---
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.padding(innerPadding).fillMaxSize()
+        ) { page ->
+            // Обчислюємо дату для ЦІЄЇ сторінки (щоб рендерити правильні дані навіть під час свайпу)
+            val pageDate = initialDate.plusDays((page - initialPage).toLong())
+            val dateString = pageDate.toString()
 
-                    // Іконка змінюється залежно від стану
-                    Icon(
-                        imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (isInboxExpanded) "Згорнути" else "Розгорнути",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+            // Фільтруємо завдання для цієї дати
+            val tasksForDay = taskList.filter { it.date == dateString }
+            val timelineTasks = tasksForDay.filter { it.startTimeMinutes != null }.sortedBy { it.startTimeMinutes }
+            val inboxTasks = tasksForDay.filter { it.startTimeMinutes == null }
 
-                // Показуємо список ТІЛЬКИ якщо isInboxExpanded == true
-                if (isInboxExpanded) {
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 200.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            // ВМІСТ СТОРІНКИ (ДНЯ)
+            Column(modifier = Modifier.fillMaxSize()) {
+
+                // Вхідні
+                var isInboxExpanded by remember { mutableStateOf(true) }
+                if (inboxTasks.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isInboxExpanded = !isInboxExpanded }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        itemsIndexed(inboxTasks) { _, task ->
-                            val isSelected = selectedIds.contains(task.id)
-                            TimelineItem(
-                                task = task,
-                                isLast = true,
-                                isSelected = isSelected,
-                                onCheck = {
-                                    if (!isSelectionMode) viewModel.toggleComplete(task)
-                                    else toggleSelection(task.id)
-                                },
-                                onClick = {
-                                    if (isSelectionMode) toggleSelection(task.id)
-                                    else taskToEdit = task
-                                },
-                                onLongClick = { if (!isSelectionMode) toggleSelection(task.id) },
-                                onTimeChange = { newTime -> viewModel.changeTaskStartTime(task, newTime) }
-                            )
-                        }
+                        Text(
+                            text = "Вхідні (${inboxTasks.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    // Розділювач теж ховаємо, якщо список згорнутий
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                }
-            }
 
-            // 2. Секція Таймлайну (Новий DayView)
-            // Займає весь вільний простір, що залишився
-            DayView(
-                tasks = timelineTasks,
-                onTaskCheck = { viewModel.toggleComplete(it) },
-                onTaskClick = { taskToEdit = it },
-                onTaskTimeChange = { task, newTime ->
-                    viewModel.changeTaskStartTime(task, newTime)
+                    if (isInboxExpanded) {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 200.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            itemsIndexed(inboxTasks) { _, task ->
+                                TimelineItem(
+                                    task = task, isLast = true, isSelected = false,
+                                    onCheck = { viewModel.toggleComplete(task) },
+                                    onClick = { taskToEdit = task },
+                                    onLongClick = { },
+                                    onTimeChange = { newTime -> viewModel.changeTaskStartTime(task, newTime) }
+                                )
+                            }
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
                 }
-            )
+
+                // Таймлайн
+                DayView(
+                    tasks = timelineTasks,
+                    onTaskCheck = { viewModel.toggleComplete(it) },
+                    onTaskClick = { taskToEdit = it },
+                    onTaskTimeChange = { task, newTime -> viewModel.changeTaskStartTime(task, newTime) }
+                )
+            }
         }
     }
 }

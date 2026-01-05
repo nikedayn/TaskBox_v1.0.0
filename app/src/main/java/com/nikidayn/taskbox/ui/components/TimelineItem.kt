@@ -40,9 +40,9 @@ fun TimelineItem(
     onTimeChange: (Int) -> Unit
 ) {
     val density = LocalDensity.current
-    val pixelsPerMinute = with(density) { 2.dp.toPx() }
+    val pixelsPerMinute = with(density) { 4.dp.toPx() }
 
-    val heightPerMinute = 2.dp
+    val heightPerMinute = 4.dp
     val computedHeight = (task.durationMinutes * heightPerMinute.value).dp.coerceAtLeast(60.dp)
 
     var offsetY by remember { mutableFloatStateOf(0f) }

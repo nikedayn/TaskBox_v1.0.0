@@ -23,7 +23,7 @@ fun DayView(
     onTaskTimeChange: (Task, Int) -> Unit
 ) {
     // ВАЖЛИВО: Залишаємо 120.dp, якщо ви хочете "великий" масштаб
-    val hourHeight = 120.dp
+    val hourHeight = 240.dp
     val hoursInDay = 24
 
     val totalHeight = hourHeight * hoursInDay

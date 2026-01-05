@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nikidayn.taskbox.TaskBoxApplication
 import com.nikidayn.taskbox.model.Task
+import com.nikidayn.taskbox.model.Note
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -22,13 +23,14 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    fun addTask(title: String, duration: Int, startTime: Int? = null) {
+    fun addTask(title: String, duration: Int, startTime: Int? = null, date: String) {
         viewModelScope.launch {
             dao.insertTask(
                 Task(
                     title = title,
                     durationMinutes = duration,
                     startTimeMinutes = startTime,
+                    date = date, // Зберігаємо дату
                     colorHex = "#FFEB3B"
                 )
             )
@@ -105,5 +107,25 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             val clampedTime = newStartTime.coerceIn(0, 1439) // Обмежуємо (00:00 - 23:59)
             dao.updateTask(task.copy(startTimeMinutes = clampedTime))
         }
+    }
+
+    // --- НОТАТКИ ---
+    val notes: StateFlow<List<Note>> = dao.getAllNotes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addNote(title: String, content: String) {
+        viewModelScope.launch {
+            dao.insertNote(Note(title = title, content = content))
+        }
+    }
+
+    fun updateNote(note: Note, newTitle: String, newContent: String) {
+        viewModelScope.launch {
+            dao.updateNote(note.copy(title = newTitle, content = newContent))
+        }
+    }
+
+    fun deleteNote(note: Note) {
+        viewModelScope.launch { dao.deleteNote(note) }
     }
 }

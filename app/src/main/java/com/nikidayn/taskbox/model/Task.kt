@@ -2,6 +2,7 @@ package com.nikidayn.taskbox.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.time.LocalDate
 
 @Entity(tableName = "tasks")
 data class Task(
@@ -13,10 +14,11 @@ data class Task(
     val startTimeMinutes: Int? = null,
     val durationMinutes: Int = 30,
 
+    // НОВЕ ПОЛЕ: Дата завдання (за замовчуванням - сьогодні)
+    val date: String = LocalDate.now().toString(),
+
     val isCompleted: Boolean = false,
     val linkedParentId: Int? = null,
-
-    // Обов'язково має бути це поле!
     val colorHex: String = "#FFEB3B"
 ) {
     val endTimeMinutes: Int?
