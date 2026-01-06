@@ -11,5 +11,6 @@ data class Note(
     val title: String,
     val content: String,
     val date: String = LocalDate.now().toString(),
-    val colorHex: String = "#FFF9C4" // Жовтуватий колір для нотаток
+    val colorHex: String = "#FFF9C4",
+    val taskId: Int? = null // <--- НОВЕ ПОЛЕ: ID завдання, до якого прив'язана нотатка
 )

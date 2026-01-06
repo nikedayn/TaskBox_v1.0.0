@@ -32,6 +32,7 @@ import com.nikidayn.taskbox.ui.theme.TaskBoxTheme
 import com.nikidayn.taskbox.ui.SettingsScreen
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.foundation.clickable
+import com.nikidayn.taskbox.ui.theme.getContrastColor
 import androidx.compose.foundation.layout.Arrangement
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -71,45 +72,61 @@ fun MainAppStructure(viewModel: TaskViewModel) {
     val navController = rememberNavController()
 
     Scaffold(
+        // Цей рядок піднімає меню над системною рискою (виправляє баг з натисканням)
+        contentWindowInsets = WindowInsets.navigationBars,
+
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
                 // 1. Календар
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, null) },
-                    label = { Text("Календар") },
                     selected = currentRoute == "timeline",
-                    onClick = { navController.navigate("timeline") { launchSingleTop = true; restoreState = true } }
-                )
-
-                // 2. Нотатки (НОВЕ)
-                NavigationBarItem(
-                    icon = { Icon(Icons.Default.Description, null) }, // Виберіть іконку
-                    label = { Text("Нотатки") },
-                    selected = currentRoute == "notes",
                     onClick = {
-                        navController.navigate("notes") {
-                            popUpTo("timeline") { saveState = true } // Зберігаємо стан календаря
+                        navController.navigate("timeline") {
+                            popUpTo("timeline") { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
-                    }
+                    },
+                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Календар") },
+                    label = { Text("Справи") }
+                )
+
+                // 2. Нотатки
+                NavigationBarItem(
+                    selected = currentRoute == "notes",
+                    onClick = {
+                        navController.navigate("notes") {
+                            popUpTo("timeline") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Edit, contentDescription = "Нотатки") },
+                    label = { Text("Нотатки") }
                 )
 
                 // 3. Шаблони
                 NavigationBarItem(
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
-                    label = { Text("Шаблони") },
                     selected = currentRoute == "templates",
-                    onClick = { navController.navigate("templates") { launchSingleTop = true; restoreState = true } }
+                    onClick = {
+                        navController.navigate("templates") {
+                            popUpTo("timeline") { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Шаблони") },
+                    label = { Text("Шаблони") }
                 )
 
-                // 4. НАЛАШТУВАННЯ
+                // 4. Налаштування
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Settings, null) },
-                    label = { Text("Опції") },
                     selected = currentRoute == "settings",
                     onClick = {
                         navController.navigate("settings") {
@@ -117,7 +134,9 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                             launchSingleTop = true
                             restoreState = true
                         }
-                    }
+                    },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Налаштування") },
+                    label = { Text("Опції") }
                 )
             }
         }
@@ -128,11 +147,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("timeline") { TaskScreen(viewModel) }
-            // Додаємо новий екран сюди
-            composable("notes") {
-                // Не забудьте імпортувати NotesScreen
-                com.nikidayn.taskbox.ui.NotesScreen(viewModel)
-            }
+            composable("notes") { com.nikidayn.taskbox.ui.NotesScreen(viewModel) }
             composable("templates") { TemplatesScreen(viewModel) }
             composable("settings") { SettingsScreen(viewModel) }
         }
@@ -143,6 +158,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
 @Composable
 fun TaskScreen(viewModel: TaskViewModel) {
     val taskList by viewModel.tasks.collectAsState()
+    val notesList by viewModel.notes.collectAsState()
 
     // ОТРИМУЄМО НАЛАШТУВАННЯ
     val workHours by viewModel.workHours.collectAsState()
@@ -239,12 +255,27 @@ fun TaskScreen(viewModel: TaskViewModel) {
         }
 
         if (taskToEdit != null) {
-            // Знаходимо всі завдання, які належать до того ж дня, що й редаговане завдання
             val tasksOnSameDay = taskList.filter { it.date == taskToEdit!!.date }
+
+            // Знаходимо прикріплену нотатку та вільні нотатки
+            val linkedNote = notesList.find { it.taskId == taskToEdit!!.id }
+            val availableNotes = notesList.filter { it.taskId == null }
 
             EditTaskDialog(
                 task = taskToEdit!!,
-                potentialParents = tasksOnSameDay, // <--- ПЕРЕДАЄМО СПИСОК СЮДИ
+                potentialParents = tasksOnSameDay,
+
+                // НОВІ ПАРАМЕТРИ
+                linkedNote = linkedNote,
+                availableNotes = availableNotes,
+                onAttachNote = { note -> viewModel.linkNote(note, taskToEdit!!.id) },
+                onDetachNote = { note -> viewModel.unlinkNote(note) },
+                onCreateNote = { autoTitle ->
+                    // Створюємо нотатку відразу з прив'язкою до цього завдання
+                    viewModel.addNote(title = autoTitle, content = "", taskId = taskToEdit!!.id)
+                },
+                // ---
+
                 onDismiss = { taskToEdit = null },
                 onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked ->
                     val updatedTask = taskToEdit!!.copy(

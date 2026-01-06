@@ -19,11 +19,16 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
+import kotlinx.coroutines.flow.combine
 import com.nikidayn.taskbox.model.TaskTemplate
 import com.nikidayn.taskbox.utils.UserPreferences
 
 class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
+
+    // 1. Стан для тексту пошуку
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
     private val dao = (application as TaskBoxApplication).database.taskDao()
     private val prefs = UserPreferences(application)
     val tasks: StateFlow<List<Task>> = dao.getAllTasks()
@@ -253,11 +258,21 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- НОТАТКИ ---
     val notes: StateFlow<List<Note>> = dao.getAllNotes()
+        .combine(_searchQuery) { allNotes, query ->
+            if (query.isBlank()) {
+                allNotes
+            } else {
+                allNotes.filter {
+                    it.title.contains(query, ignoreCase = true) ||
+                            it.content.contains(query, ignoreCase = true)
+                }
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun addNote(title: String, content: String) {
+    fun addNote(title: String, content: String, taskId: Int? = null) {
         viewModelScope.launch {
-            dao.insertNote(Note(title = title, content = content))
+            dao.insertNote(Note(title = title, content = content, taskId = taskId))
         }
     }
 
@@ -270,6 +285,25 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteNote(note: Note) {
         viewModelScope.launch { dao.deleteNote(note) }
+    }
+
+    // 2. Метод для зміни тексту пошуку
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+    }
+
+    // НОВЕ: Прив'язати існуючу нотатку до завдання
+    fun linkNote(note: Note, taskId: Int) {
+        viewModelScope.launch {
+            dao.updateNote(note.copy(taskId = taskId))
+        }
+    }
+
+    // НОВЕ: Відв'язати нотатку
+    fun unlinkNote(note: Note) {
+        viewModelScope.launch {
+            dao.updateNote(note.copy(taskId = null))
+        }
     }
 
     // Функція оновлення завдання (для MainActivity)
