@@ -113,131 +113,140 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun changeTaskStartTime(task: Task, newStartTime: Int) {
         viewModelScope.launch {
-            val allTasks = tasks.value.toMutableList()
-            val index = allTasks.indexOfFirst { it.id == task.id }
-            if (index == -1) return@launch
+            try {
+                val allTasks = tasks.value
+                val index = allTasks.indexOfFirst { it.id == task.id }
+                if (index == -1) return@launch
 
-            // Якщо сама картка заблокована - не рухаємо
-            if (allTasks[index].isLocked) return@launch
+                val currentTask = allTasks[index]
+                if (currentTask.isLocked) return@launch
 
-            val currentTask = allTasks[index]
-            val duration = currentTask.durationMinutes
+                val updatesMap = allTasks.associateBy { it.id }.toMutableMap()
+                val duration = currentTask.durationMinutes
+                val oldStart = currentTask.startTimeMinutes ?: 0
+                val proposedStart = newStartTime.coerceIn(0, 1439 - duration)
+                val diff = proposedStart - oldStart
 
-            // Початковий бажаний час
-            var proposedStart = newStartTime.coerceIn(0, 1439 - duration)
-            var proposedEnd = proposedStart + duration
+                if (diff == 0) return@launch
 
-            // === ЕТАП 1: ЛОГІКА "ВИШТОВХУВАННЯ" (Force Field) ===
-            // Перевіряємо, чи ми не "сіли" зверху на заблоковану картку.
-            // Якщо так - вона має нас виплюнути в найближчу сторону.
+                // 1. Рухаємо ланцюжок (прив'язані картки)
+                val processedIds = mutableSetOf<Int>()
+                fun moveTaskAndChildren(taskId: Int, timeDiff: Int) {
+                    if (processedIds.contains(taskId)) return
+                    processedIds.add(taskId)
+                    val t = updatesMap[taskId] ?: return
+                    if (t.isLocked) return
 
-            val lockedTasks = allTasks.filter { it.isLocked && it.id != task.id }
+                    val currentStart = t.startTimeMinutes ?: 0
+                    val newStart = (currentStart + timeDiff).coerceIn(0, 1439 - t.durationMinutes)
+                    updatesMap[taskId] = t.copy(startTimeMinutes = newStart)
 
-            for (locked in lockedTasks) {
-                val lockedStart = locked.startTimeMinutes ?: 0
-                val lockedEnd = lockedStart + locked.durationMinutes
-
-                // Перевірка на перетин (Overlap Test)
-                if (proposedStart < lockedEnd && proposedEnd > lockedStart) {
-
-                    // Ми налізли на заблокований блок. Куди нас виштовхнути?
-                    // Рахуємо відстань до "виходу" зверху і знизу.
-
-                    val distanceToTop = kotlin.math.abs(proposedEnd - lockedStart)    // Щоб вийти вгору
-                    val distanceToBottom = kotlin.math.abs(proposedStart - lockedEnd) // Щоб вийти вниз
-
-                    if (distanceToTop < distanceToBottom) {
-                        // Ближче вискочити вгору (перед заблокованим блоком)
-                        proposedStart = lockedStart - duration
-                    } else {
-                        // Ближче вискочити вниз (після заблокованого блоку)
-                        // Тобто ми "пройшли крізь стіну"
-                        proposedStart = lockedEnd
+                    allTasks.filter { it.linkedParentId == taskId }.forEach { child ->
+                        moveTaskAndChildren(child.id, timeDiff)
                     }
-
-                    // Оновлюємо кінець, бо старт змінився
-                    proposedStart = proposedStart.coerceIn(0, 1439 - duration)
-                    proposedEnd = proposedStart + duration
                 }
-            }
+                moveTaskAndChildren(currentTask.id, diff)
 
-            // Якщо після "виштовхування" час не змінився від початкового положення в базі - виходимо
-            if (proposedStart == (currentTask.startTimeMinutes ?: 0)) return@launch
+                // 2. ФІЗИКА З УРАХУВАННЯМ "АГРЕСОРА" (Того, кого тягнуть)
+                repeat(3) {
+                    val sortedList = updatesMap.values
+                        .filter { it.startTimeMinutes != null }
+                        .sortedBy { it.startTimeMinutes }
+                        .toMutableList()
 
-            // === ЕТАП 2: ОНОВЛЕННЯ ТА ФІЗИКА ДОМІНО ===
-            // Тепер, коли ми знаємо "безпечний" час (proposedStart), який точно не всередині стіни,
-            // запускаємо звичайну фізику, щоб розштовхати незаблоковані картки.
+                    // Прохід по парах сусідів
+                    for (i in 0 until sortedList.size - 1) {
+                        val top = sortedList[i]       // Верхня картка
+                        val bottom = sortedList[i + 1] // Нижня картка
 
-            allTasks[index] = currentTask.copy(startTimeMinutes = proposedStart)
-            val tasksToUpdate = mutableListOf<Task>()
-            tasksToUpdate.add(allTasks[index])
+                        val topStart = top.startTimeMinutes ?: 0
+                        val topEnd = topStart + top.durationMinutes
+                        val bottomStart = bottom.startTimeMinutes ?: 0
 
-            val isMovingDown = proposedStart > (task.startTimeMinutes ?: 0)
+                        // Є накладання?
+                        if (bottomStart < topEnd) {
+                            val overlap = topEnd - bottomStart
+                            // Поріг для проходження наскрізь (50% від меншої картки)
+                            val threshold = minOf(top.durationMinutes, bottom.durationMinutes) / 2
 
-            if (isMovingDown) {
-                // Рух ВНИЗ -> Штовхаємо нижні
-                val timelineTasks = allTasks.filter { it.startTimeMinutes != null }
-                    .sortedBy { it.startTimeMinutes }
-                    .toMutableList()
+                            // Визначаємо, хто "Агресор" (кого ми тягнемо)
+                            val isTopAggressor = top.id == task.id
+                            val isBottomAggressor = bottom.id == task.id
 
-                for (i in 0 until timelineTasks.size - 1) {
-                    val current = timelineTasks[i]
-                    val next = timelineTasks[i + 1]
-                    val currentEnd = (current.startTimeMinutes ?: 0) + current.durationMinutes
-                    val nextStart = next.startTimeMinutes ?: 0
+                            if (isTopAggressor) {
+                                // === ТЯГНЕМО ВЕРХНЮ ВНИЗ ===
+                                // Вона штовхає нижню.
+                                if (bottom.isLocked) {
+                                    // Нижня - стіна. Верхня відскакує назад.
+                                    val correctStart = (bottomStart - top.durationMinutes).coerceAtLeast(0)
+                                    val updatedTop = top.copy(startTimeMinutes = correctStart)
+                                    updatesMap[top.id] = updatedTop
+                                    sortedList[i] = updatedTop
+                                } else if (overlap > threshold) {
+                                    // SWAP: Нижня стрибає вгору (пропускає нас)
+                                    val jumpStart = (topStart - bottom.durationMinutes).coerceAtLeast(0)
+                                    val updatedBottom = bottom.copy(startTimeMinutes = jumpStart)
+                                    updatesMap[bottom.id] = updatedBottom
+                                    sortedList[i + 1] = updatedBottom
+                                } else {
+                                    // PUSH: Штовхаємо нижню вниз
+                                    val pushStart = topEnd.coerceAtMost(1439 - bottom.durationMinutes)
+                                    val updatedBottom = bottom.copy(startTimeMinutes = pushStart)
+                                    updatesMap[bottom.id] = updatedBottom
+                                    sortedList[i + 1] = updatedBottom
+                                }
 
-                    if (nextStart < currentEnd) {
-                        // Якщо наступна - це СТІНА, то ми вперлися і зупиняємось перед нею
-                        // (Але Етап 1 вже гарантував, що МИ не в стіні. Це для ланцюгової реакції)
-                        if (next.isLocked) {
-                            val correctedCurrent = current.copy(startTimeMinutes = nextStart - current.durationMinutes)
-                            tasksToUpdate.add(correctedCurrent)
-                            timelineTasks[i] = correctedCurrent
-                        } else {
-                            // Якщо коробка - штовхаємо далі
-                            val newNextStart = currentEnd.coerceAtMost(1439 - next.durationMinutes)
-                            if (newNextStart != nextStart) {
-                                val updatedNext = next.copy(startTimeMinutes = newNextStart)
-                                timelineTasks[i + 1] = updatedNext
-                                tasksToUpdate.add(updatedNext)
+                            } else if (isBottomAggressor) {
+                                // === ТЯГНЕМО НИЖНЮ ВГОРУ ===
+                                // Вона штовхає верхню.
+                                if (top.isLocked) {
+                                    // Верхня - стіна. Нижня відскакує вниз.
+                                    val correctStart = (topEnd).coerceAtMost(1439 - bottom.durationMinutes)
+                                    val updatedBottom = bottom.copy(startTimeMinutes = correctStart)
+                                    updatesMap[bottom.id] = updatedBottom
+                                    sortedList[i + 1] = updatedBottom
+                                } else if (overlap > threshold) {
+                                    // SWAP: Верхня стрибає вниз (пропускає нас)
+                                    val jumpStart = (bottomStart + bottom.durationMinutes).coerceAtMost(1439 - top.durationMinutes)
+                                    val updatedTop = top.copy(startTimeMinutes = jumpStart)
+                                    updatesMap[top.id] = updatedTop
+                                    sortedList[i] = updatedTop
+                                } else {
+                                    // PUSH: Штовхаємо верхню вгору
+                                    val pushStart = (bottomStart - top.durationMinutes).coerceAtLeast(0)
+                                    val updatedTop = top.copy(startTimeMinutes = pushStart)
+                                    updatesMap[top.id] = updatedTop
+                                    sortedList[i] = updatedTop
+                                }
+
+                            } else {
+                                // === ЕФЕКТ ДОМІНО (Ніхто з них не є активним) ===
+                                // Тут працює проста гравітація: верхні тиснуть на нижніх.
+                                if (!bottom.isLocked) {
+                                    val pushStart = topEnd.coerceAtMost(1439 - bottom.durationMinutes)
+                                    if (pushStart != bottomStart) {
+                                        val updatedBottom = bottom.copy(startTimeMinutes = pushStart)
+                                        updatesMap[bottom.id] = updatedBottom
+                                        sortedList[i + 1] = updatedBottom
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                // Рух ВГОРУ -> Штовхаємо верхні
-                val timelineTasks = allTasks.filter { it.startTimeMinutes != null }
-                    .sortedByDescending { it.startTimeMinutes }
-                    .toMutableList()
 
-                for (i in 0 until timelineTasks.size - 1) {
-                    val current = timelineTasks[i]
-                    val previous = timelineTasks[i + 1]
-                    val currentStart = current.startTimeMinutes ?: 0
-                    val prevStart = previous.startTimeMinutes ?: 0
-                    val prevEnd = prevStart + previous.durationMinutes
-
-                    if (currentStart < prevEnd) {
-                        if (previous.isLocked) {
-                            // Вперлися в стіну знизу
-                            val correctedCurrent = current.copy(startTimeMinutes = prevEnd)
-                            tasksToUpdate.add(correctedCurrent)
-                            timelineTasks[i] = correctedCurrent
-                        } else {
-                            // Штовхаємо коробку вгору
-                            val newPrevStart = (currentStart - previous.durationMinutes).coerceAtLeast(0)
-                            if (newPrevStart != prevStart) {
-                                val updatedPrev = previous.copy(startTimeMinutes = newPrevStart)
-                                timelineTasks[i + 1] = updatedPrev
-                                tasksToUpdate.add(updatedPrev)
-                            }
-                        }
-                    }
+                // 3. Зберігаємо зміни
+                val tasksToSave = updatesMap.values.filter { t ->
+                    val original = allTasks.find { it.id == t.id }
+                    original?.startTimeMinutes != t.startTimeMinutes
                 }
-            }
 
-            if (tasksToUpdate.isNotEmpty()) {
-                dao.updateTasks(tasksToUpdate.distinctBy { it.id })
+                if (tasksToSave.isNotEmpty()) {
+                    dao.updateTasks(tasksToSave.toList())
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
