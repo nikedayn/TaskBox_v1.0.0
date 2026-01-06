@@ -20,9 +20,11 @@ import androidx.compose.ui.unit.dp
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.utils.minutesToTime
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditTaskDialog(
     task: Task,
+    potentialParents: List<Task>, // <--- НОВИЙ ПАРАМЕТР: список завдань цього дня
     onDismiss: () -> Unit,
     onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?, newParentId: Int?, newIsLocked: Boolean) -> Unit,
     onDelete: () -> Unit
@@ -30,7 +32,7 @@ fun EditTaskDialog(
     var title by remember { mutableStateOf(task.title) }
     var isLocked by remember { mutableStateOf(task.isLocked) }
 
-    // Час (години та хвилини)
+    // Час
     var hoursText by remember {
         val h = task.durationMinutes / 60
         mutableStateOf(if (h > 0) h.toString() else "")
@@ -42,6 +44,11 @@ fun EditTaskDialog(
 
     var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
     var parentId by remember { mutableStateOf(task.linkedParentId) }
+
+    // Для Dropdown (вибору батьківського завдання)
+    var isParentMenuExpanded by remember { mutableStateOf(false) }
+    // Знаходимо назву поточного батьківського завдання для відображення
+    val currentParentTitle = potentialParents.find { it.id == parentId }?.title ?: "Немає прив'язки"
 
     val context = LocalContext.current
     val showTimePicker = {
@@ -75,7 +82,7 @@ fun EditTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 2. Тривалість (Год : Хв)
+                // 2. Тривалість
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = hoursText,
@@ -93,50 +100,80 @@ fun EditTaskDialog(
                     )
                 }
 
-                // 3. РЯДОК ДІЙ: Прив'язка + Замок
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // 3. ВИБІР БАТЬКІВСЬКОГО ЗАВДАННЯ (Виправлено)
+                ExposedDropdownMenuBox(
+                    expanded = isParentMenuExpanded,
+                    onExpandedChange = { isParentMenuExpanded = !isParentMenuExpanded },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Кнопка Ланцюжка (Прив'язати)
-                    OutlinedButton(
-                        onClick = {
-                            if (parentId == null) {
-                                // Тестова логіка: прив'язати до попередньої (ID - 1)
-                                parentId = (task.id - 1).coerceAtLeast(1)
-                            } else {
-                                parentId = null
-                            }
+                    OutlinedTextField(
+                        value = currentParentTitle,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Прив'язати до...") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isParentMenuExpanded) },
+                        leadingIcon = {
+                            Icon(
+                                if (parentId != null) Icons.Default.Link else Icons.Default.LinkOff,
+                                contentDescription = null
+                            )
                         },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = if (parentId != null) Icons.Default.Link else Icons.Default.LinkOff,
-                            contentDescription = null
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = if (parentId != null) "ID: $parentId" else "Прив'язати",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
 
-                    // Кнопка Замка (Стіна)
-                    FilledTonalIconToggleButton(
-                        checked = isLocked,
-                        onCheckedChange = { isLocked = it }
+                    ExposedDropdownMenu(
+                        expanded = isParentMenuExpanded,
+                        onDismissRequest = { isParentMenuExpanded = false }
                     ) {
-                        Icon(
-                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = "Lock task",
-                            tint = if (isLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        // Опція "Відв'язати"
+                        DropdownMenuItem(
+                            text = { Text("Немає прив'язки") },
+                            onClick = {
+                                parentId = null
+                                isParentMenuExpanded = false
+                            }
                         )
+                        HorizontalDivider()
+                        // Список інших завдань (фільтруємо саме себе, щоб не прив'язатися до самого себе)
+                        potentialParents.filter { it.id != task.id }.forEach { potentialParent ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(potentialParent.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        // Показуємо час батька для зручності
+                                        val timeStr = if (potentialParent.startTimeMinutes != null)
+                                            minutesToTime(potentialParent.startTimeMinutes)
+                                        else "Вхідні"
+                                        Text(timeStr, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                },
+                                onClick = {
+                                    parentId = potentialParent.id
+                                    isParentMenuExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
 
-                // 4. Час початку
+                // 4. Замок
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Зафіксувати час (стіна)?", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = isLocked,
+                        onCheckedChange = { isLocked = it },
+                        thumbContent = {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    )
+                }
+
+                // 5. Час початку
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -167,10 +204,9 @@ fun EditTaskDialog(
                 val finalDuration = if ((h * 60 + m) > 0) (h * 60 + m) else 30
 
                 if (title.isNotBlank()) {
-                    // Передаємо всі 5 параметрів
                     onConfirm(title, finalDuration, selectedStartTime, parentId, isLocked)
                 }
-            }) { Text("Зберегти зміни") }
+            }) { Text("Зберегти") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Скасувати") }

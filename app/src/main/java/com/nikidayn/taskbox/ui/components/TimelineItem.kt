@@ -1,7 +1,6 @@
 package com.nikidayn.taskbox.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -26,6 +25,7 @@ import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.utils.formatDuration
 import com.nikidayn.taskbox.utils.minutesToTime
 import kotlin.math.roundToInt
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -65,6 +65,10 @@ fun TimelineItem(
     ) {
         Spacer(modifier = Modifier.width(0.dp))
 
+        val textColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+        else if (task.isCompleted) Color.Gray
+        else getContentColorForHex(task.colorHex)
+
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -77,7 +81,10 @@ fun TimelineItem(
                     onLongClick = onLongClick
                 ),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = containerColor),
+            colors = CardDefaults.cardColors(
+                containerColor = containerColor,
+                contentColor = textColor // <--- ДОДАЙТЕ ЦЕЙ РЯДОК
+            ),
             border = androidx.compose.foundation.BorderStroke(borderWidth, borderColor)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -103,6 +110,7 @@ fun TimelineItem(
                             text = task.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Medium,
+                            color = textColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -153,13 +161,18 @@ fun TimelineItem(
                                                 },
                                                 onDragEnd = {
                                                     isDragging = false
-                                                    val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
+                                                    val minutesChange =
+                                                        (offsetY / pixelsPerMinute).roundToInt()
 
                                                     // 2. БАЗОВИЙ ЧАС: Якщо null, беремо minTime
                                                     val baseTime = task.startTimeMinutes ?: minTime
 
                                                     // 3. ОБМЕЖЕННЯ: Не менше minTime
-                                                    val newStart = (baseTime + minutesChange).coerceIn(minTime, 1439)
+                                                    val newStart =
+                                                        (baseTime + minutesChange).coerceIn(
+                                                            minTime,
+                                                            1439
+                                                        )
 
                                                     offsetY = 0f
                                                     onTimeChange(newStart)
@@ -172,11 +185,16 @@ fun TimelineItem(
                                                     change.consume()
                                                     offsetY += dragAmount.y
 
-                                                    val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
+                                                    val minutesChange =
+                                                        (offsetY / pixelsPerMinute).roundToInt()
                                                     val baseTime = task.startTimeMinutes ?: minTime
 
                                                     // Обмежуємо прев'ю теж
-                                                    val rawNewTime = (baseTime + minutesChange).coerceIn(minTime, 1439)
+                                                    val rawNewTime =
+                                                        (baseTime + minutesChange).coerceIn(
+                                                            minTime,
+                                                            1439
+                                                        )
                                                     previewTime = minutesToTime(rawNewTime)
                                                 }
                                             )
@@ -208,4 +226,15 @@ fun TimelineItem(
             }
         }
     }
+}
+
+// Проста функція: якщо фон світлий -> текст чорний, інакше -> білий
+fun getContentColorForHex(hex: String): Color {
+    val color = try {
+        android.graphics.Color.parseColor(hex)
+    } catch (e: Exception) {
+        android.graphics.Color.WHITE
+    }
+    val darkness = 1 - (0.299 * android.graphics.Color.red(color) + 0.587 * android.graphics.Color.green(color) + 0.114 * android.graphics.Color.blue(color)) / 255
+    return if (darkness < 0.5) Color.Black else Color.White
 }

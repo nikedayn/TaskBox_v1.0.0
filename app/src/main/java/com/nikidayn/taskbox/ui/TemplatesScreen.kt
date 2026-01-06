@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nikidayn.taskbox.model.TaskTemplate
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
+import com.nikidayn.taskbox.ui.theme.getContrastColor
 
 // УВАГА: Тепер функція приймає viewModel
 @Composable
@@ -81,9 +82,15 @@ fun TemplatesScreen(viewModel: TaskViewModel) {
 
 @Composable
 fun TemplateItem(template: TaskTemplate, onClick: () -> Unit, onDelete: () -> Unit) {
+    // Визначаємо колір тексту
+    val textColor = getContrastColor(template.colorHex)
+
     Card(
         onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = Color(android.graphics.Color.parseColor(template.colorHex))),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(android.graphics.Color.parseColor(template.colorHex)),
+            contentColor = textColor // <--- ДОДАЄМО ЦЕ (змушує текст і іконки бути чорними)
+        ),
         modifier = Modifier.height(120.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {

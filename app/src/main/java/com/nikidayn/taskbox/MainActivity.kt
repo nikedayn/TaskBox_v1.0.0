@@ -44,22 +44,23 @@ class MainActivity : ComponentActivity() {
         val viewModel: TaskViewModel by viewModels()
 
         setContent {
-            // ОТРИМУЄМО ТЕМУ З VIEWMODEL
             val themeMode by viewModel.themeMode.collectAsState()
 
-            // Визначаємо, чи темна тема:
-            // 0 - системна (залежить від налаштувань телефону)
-            // 1 - світла (false)
-            // 2 - темна (true)
+            // Ваша логіка вибору теми...
             val useDarkTheme = when (themeMode) {
                 1 -> false
                 2 -> true
                 else -> isSystemInDarkTheme()
             }
 
-            // Передаємо параметр darkTheme
             TaskBoxTheme(darkTheme = useDarkTheme) {
-                MainAppStructure(viewModel)
+                // ДОДАЄМО SURFACE ТУТ
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background // Заповнюємо фон кольором теми
+                ) {
+                    MainAppStructure(viewModel)
+                }
             }
         }
     }
@@ -238,17 +239,20 @@ fun TaskScreen(viewModel: TaskViewModel) {
         }
 
         if (taskToEdit != null) {
+            // Знаходимо всі завдання, які належать до того ж дня, що й редаговане завдання
+            val tasksOnSameDay = taskList.filter { it.date == taskToEdit!!.date }
+
             EditTaskDialog(
                 task = taskToEdit!!,
+                potentialParents = tasksOnSameDay, // <--- ПЕРЕДАЄМО СПИСОК СЮДИ
                 onDismiss = { taskToEdit = null },
-                // Тепер тут приймається 4 параметри
                 onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked ->
                     val updatedTask = taskToEdit!!.copy(
                         title = newTitle,
                         durationMinutes = newDuration,
                         startTimeMinutes = newStart,
                         linkedParentId = newParentId,
-                        isLocked = newIsLocked // <--- Зберігаємо стан замка
+                        isLocked = newIsLocked
                     )
                     viewModel.updateTask(updatedTask)
                     taskToEdit = null

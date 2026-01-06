@@ -107,7 +107,7 @@ fun SettingsScreen(viewModel: TaskViewModel) {
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
             Text(
-                text = "Це впливає на відображення сітки таймлайну (в майбутньому)",
+                text = "Це впливає на відображення сітки таймлайну",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )

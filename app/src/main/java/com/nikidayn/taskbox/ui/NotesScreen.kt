@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nikidayn.taskbox.model.Note
+import com.nikidayn.taskbox.ui.theme.getContrastColor
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
 
 @Composable
@@ -97,10 +98,16 @@ fun NotesScreen(viewModel: TaskViewModel) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NoteItem(note: Note, onClick: () -> Unit) {
+    // Визначаємо контрастний колір
+    val textColor = getContrastColor(note.colorHex)
+
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(android.graphics.Color.parseColor(note.colorHex)))
+        colors = CardDefaults.cardColors(
+            containerColor = Color(android.graphics.Color.parseColor(note.colorHex)),
+            contentColor = textColor // <--- ВИПРАВЛЕННЯ КОЛЬОРУ ТЕКСТУ
+        )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             if (note.title.isNotBlank()) {

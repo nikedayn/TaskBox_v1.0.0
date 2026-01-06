@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -35,10 +36,10 @@ fun DayView(
 
     // 2. Головний контейнер тепер гнучкий і має скрол
     Box(
-        modifier = modifier // Сюди прийде вага (weight) з MainActivity
+        modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(scrollState) // Скрол тут
-            .background(Color.White)
+            .verticalScroll(scrollState)
+            .background(MaterialTheme.colorScheme.background) // <--- ВИПРАВЛЕННЯ
     ) {
         // 3. Колонка для додавання відступу зверху
         Column(modifier = Modifier.fillMaxWidth()) {
