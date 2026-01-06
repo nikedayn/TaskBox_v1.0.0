@@ -19,6 +19,7 @@ data class Task(
 
     val isCompleted: Boolean = false,
     val linkedParentId: Int? = null,
+    val isLocked: Boolean = false,
     val colorHex: String = "#FFEB3B"
 ) {
     val endTimeMinutes: Int?

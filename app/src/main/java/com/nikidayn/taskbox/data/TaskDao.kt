@@ -70,4 +70,10 @@ interface TaskDao {
         deleteAllTemplates()
         deleteAllNotes()
     }
+
+    @Transaction
+    @Update
+    suspend fun updateTasks(tasks: List<Task>)
+
+
 }

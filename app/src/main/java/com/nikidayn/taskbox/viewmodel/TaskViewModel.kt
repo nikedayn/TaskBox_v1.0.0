@@ -3,7 +3,6 @@ package com.nikidayn.taskbox.viewmodel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -41,7 +40,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     title = title,
                     durationMinutes = duration,
                     startTimeMinutes = startTime,
-                    date = date, // Зберігаємо дату
+                    date = date,
                     colorHex = "#FFEB3B"
                 )
             )
@@ -82,7 +81,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dao.deleteTemplate(template) }
     }
 
-    // ГОЛОВНА МАГІЯ: Створити завдання на основі шаблону
     fun applyTemplateToInbox(template: TaskTemplate) {
         viewModelScope.launch {
             dao.insertTask(
@@ -90,7 +88,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     title = template.title,
                     durationMinutes = template.durationMinutes,
                     colorHex = template.colorHex,
-                    startTimeMinutes = null // Падає у вхідні
+                    startTimeMinutes = null
                 )
             )
         }
@@ -115,8 +113,132 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
     fun changeTaskStartTime(task: Task, newStartTime: Int) {
         viewModelScope.launch {
-            val clampedTime = newStartTime.coerceIn(0, 1439) // Обмежуємо (00:00 - 23:59)
-            dao.updateTask(task.copy(startTimeMinutes = clampedTime))
+            val allTasks = tasks.value.toMutableList()
+            val index = allTasks.indexOfFirst { it.id == task.id }
+            if (index == -1) return@launch
+
+            // Якщо сама картка заблокована - не рухаємо
+            if (allTasks[index].isLocked) return@launch
+
+            val currentTask = allTasks[index]
+            val duration = currentTask.durationMinutes
+
+            // Початковий бажаний час
+            var proposedStart = newStartTime.coerceIn(0, 1439 - duration)
+            var proposedEnd = proposedStart + duration
+
+            // === ЕТАП 1: ЛОГІКА "ВИШТОВХУВАННЯ" (Force Field) ===
+            // Перевіряємо, чи ми не "сіли" зверху на заблоковану картку.
+            // Якщо так - вона має нас виплюнути в найближчу сторону.
+
+            val lockedTasks = allTasks.filter { it.isLocked && it.id != task.id }
+
+            for (locked in lockedTasks) {
+                val lockedStart = locked.startTimeMinutes ?: 0
+                val lockedEnd = lockedStart + locked.durationMinutes
+
+                // Перевірка на перетин (Overlap Test)
+                if (proposedStart < lockedEnd && proposedEnd > lockedStart) {
+
+                    // Ми налізли на заблокований блок. Куди нас виштовхнути?
+                    // Рахуємо відстань до "виходу" зверху і знизу.
+
+                    val distanceToTop = kotlin.math.abs(proposedEnd - lockedStart)    // Щоб вийти вгору
+                    val distanceToBottom = kotlin.math.abs(proposedStart - lockedEnd) // Щоб вийти вниз
+
+                    if (distanceToTop < distanceToBottom) {
+                        // Ближче вискочити вгору (перед заблокованим блоком)
+                        proposedStart = lockedStart - duration
+                    } else {
+                        // Ближче вискочити вниз (після заблокованого блоку)
+                        // Тобто ми "пройшли крізь стіну"
+                        proposedStart = lockedEnd
+                    }
+
+                    // Оновлюємо кінець, бо старт змінився
+                    proposedStart = proposedStart.coerceIn(0, 1439 - duration)
+                    proposedEnd = proposedStart + duration
+                }
+            }
+
+            // Якщо після "виштовхування" час не змінився від початкового положення в базі - виходимо
+            if (proposedStart == (currentTask.startTimeMinutes ?: 0)) return@launch
+
+            // === ЕТАП 2: ОНОВЛЕННЯ ТА ФІЗИКА ДОМІНО ===
+            // Тепер, коли ми знаємо "безпечний" час (proposedStart), який точно не всередині стіни,
+            // запускаємо звичайну фізику, щоб розштовхати незаблоковані картки.
+
+            allTasks[index] = currentTask.copy(startTimeMinutes = proposedStart)
+            val tasksToUpdate = mutableListOf<Task>()
+            tasksToUpdate.add(allTasks[index])
+
+            val isMovingDown = proposedStart > (task.startTimeMinutes ?: 0)
+
+            if (isMovingDown) {
+                // Рух ВНИЗ -> Штовхаємо нижні
+                val timelineTasks = allTasks.filter { it.startTimeMinutes != null }
+                    .sortedBy { it.startTimeMinutes }
+                    .toMutableList()
+
+                for (i in 0 until timelineTasks.size - 1) {
+                    val current = timelineTasks[i]
+                    val next = timelineTasks[i + 1]
+                    val currentEnd = (current.startTimeMinutes ?: 0) + current.durationMinutes
+                    val nextStart = next.startTimeMinutes ?: 0
+
+                    if (nextStart < currentEnd) {
+                        // Якщо наступна - це СТІНА, то ми вперлися і зупиняємось перед нею
+                        // (Але Етап 1 вже гарантував, що МИ не в стіні. Це для ланцюгової реакції)
+                        if (next.isLocked) {
+                            val correctedCurrent = current.copy(startTimeMinutes = nextStart - current.durationMinutes)
+                            tasksToUpdate.add(correctedCurrent)
+                            timelineTasks[i] = correctedCurrent
+                        } else {
+                            // Якщо коробка - штовхаємо далі
+                            val newNextStart = currentEnd.coerceAtMost(1439 - next.durationMinutes)
+                            if (newNextStart != nextStart) {
+                                val updatedNext = next.copy(startTimeMinutes = newNextStart)
+                                timelineTasks[i + 1] = updatedNext
+                                tasksToUpdate.add(updatedNext)
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Рух ВГОРУ -> Штовхаємо верхні
+                val timelineTasks = allTasks.filter { it.startTimeMinutes != null }
+                    .sortedByDescending { it.startTimeMinutes }
+                    .toMutableList()
+
+                for (i in 0 until timelineTasks.size - 1) {
+                    val current = timelineTasks[i]
+                    val previous = timelineTasks[i + 1]
+                    val currentStart = current.startTimeMinutes ?: 0
+                    val prevStart = previous.startTimeMinutes ?: 0
+                    val prevEnd = prevStart + previous.durationMinutes
+
+                    if (currentStart < prevEnd) {
+                        if (previous.isLocked) {
+                            // Вперлися в стіну знизу
+                            val correctedCurrent = current.copy(startTimeMinutes = prevEnd)
+                            tasksToUpdate.add(correctedCurrent)
+                            timelineTasks[i] = correctedCurrent
+                        } else {
+                            // Штовхаємо коробку вгору
+                            val newPrevStart = (currentStart - previous.durationMinutes).coerceAtLeast(0)
+                            if (newPrevStart != prevStart) {
+                                val updatedPrev = previous.copy(startTimeMinutes = newPrevStart)
+                                timelineTasks[i + 1] = updatedPrev
+                                tasksToUpdate.add(updatedPrev)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (tasksToUpdate.isNotEmpty()) {
+                dao.updateTasks(tasksToUpdate.distinctBy { it.id })
+            }
         }
     }
 
@@ -130,9 +252,10 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateNote(note: Note, newTitle: String, newContent: String) {
+    // !!! ДОДАНО ПРОПУЩЕНУ ФУНКЦІЮ !!!
+    fun updateNote(note: Note, title: String, content: String) {
         viewModelScope.launch {
-            dao.updateNote(note.copy(title = newTitle, content = newContent))
+            dao.updateNote(note.copy(title = title, content = content))
         }
     }
 
@@ -140,9 +263,15 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dao.deleteNote(note) }
     }
 
+    // Функція оновлення завдання (для MainActivity)
+    fun updateTask(task: Task) {
+        viewModelScope.launch {
+            dao.updateTask(task)
+        }
+    }
+
     // --- НАЛАШТУВАННЯ ---
 
-    // Стан теми
     private val _themeMode = MutableStateFlow(prefs.getThemeMode())
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
@@ -151,7 +280,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         _themeMode.value = mode
     }
 
-    // Робочі години
     private val _workHours = MutableStateFlow(prefs.getStartHour() to prefs.getEndHour())
     val workHours: StateFlow<Pair<Float, Float>> = _workHours.asStateFlow()
 
@@ -169,12 +297,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // 1. Генеруємо JSON з усіх даних
     suspend fun createBackupJson(): String = withContext(Dispatchers.IO) {
-        // Збираємо поточні дані напряму з бази (через flow.first() або додайте прості suspend методи в DAO)
-        // Для простоти, оскільки у нас Flow, ми можемо взяти поточні значення зі StateFlow, якщо вони завантажені,
-        // але надійніше додати в DAO методи getList...
-        // Давайте використаємо поточні значення зі StateFlow, які ми вже маємо в пам'яті:
         val backup = BackupData(
             tasks = tasks.value,
             templates = templates.value,
@@ -183,7 +306,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         return@withContext Gson().toJson(backup)
     }
 
-    // 2. Відновлюємо дані з JSON
     fun restoreBackup(inputStream: InputStream, onSuccess: () -> Unit, onError: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -191,7 +313,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 val jsonString = reader.readText()
                 val backup = Gson().fromJson(jsonString, BackupData::class.java)
 
-                // Очищаємо базу і записуємо нове
                 dao.clearAllData()
 
                 backup.tasks.forEach { dao.insertTask(it) }
@@ -205,7 +326,4 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
-
-    fun exportData() { /* Логіка експорту JSON */ }
-    fun importData() { /* Логіка імпорту JSON */ }
 }

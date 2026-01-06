@@ -31,6 +31,8 @@ import com.nikidayn.taskbox.viewmodel.TaskViewModel
 import com.nikidayn.taskbox.ui.theme.TaskBoxTheme
 import com.nikidayn.taskbox.ui.SettingsScreen
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -239,8 +241,16 @@ fun TaskScreen(viewModel: TaskViewModel) {
             EditTaskDialog(
                 task = taskToEdit!!,
                 onDismiss = { taskToEdit = null },
-                onConfirm = { newTitle, newDur, newStart ->
-                    viewModel.updateTaskDetails(taskToEdit!!, newTitle, newDur, newStart)
+                // Тепер тут приймається 4 параметри
+                onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked ->
+                    val updatedTask = taskToEdit!!.copy(
+                        title = newTitle,
+                        durationMinutes = newDuration,
+                        startTimeMinutes = newStart,
+                        linkedParentId = newParentId,
+                        isLocked = newIsLocked // <--- Зберігаємо стан замка
+                    )
+                    viewModel.updateTask(updatedTask)
                     taskToEdit = null
                 },
                 onDelete = {

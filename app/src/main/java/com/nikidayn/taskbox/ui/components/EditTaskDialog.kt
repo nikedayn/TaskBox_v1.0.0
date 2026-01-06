@@ -5,12 +5,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.utils.minutesToTime
@@ -19,13 +24,13 @@ import com.nikidayn.taskbox.utils.minutesToTime
 fun EditTaskDialog(
     task: Task,
     onDismiss: () -> Unit,
-    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?) -> Unit,
-    onDelete: () -> Unit // Параметр для видалення
+    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?, newParentId: Int?, newIsLocked: Boolean) -> Unit,
+    onDelete: () -> Unit
 ) {
     var title by remember { mutableStateOf(task.title) }
+    var isLocked by remember { mutableStateOf(task.isLocked) }
 
-    // --- ЛОГІКА РОЗДІЛЕННЯ ЧАСУ ---
-    // Ініціалізуємо поля на основі існуючої тривалості
+    // Час (години та хвилини)
     var hoursText by remember {
         val h = task.durationMinutes / 60
         mutableStateOf(if (h > 0) h.toString() else "")
@@ -34,25 +39,16 @@ fun EditTaskDialog(
         val m = task.durationMinutes % 60
         mutableStateOf(m.toString())
     }
-    // -----------------------------
 
     var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
-    val context = LocalContext.current
+    var parentId by remember { mutableStateOf(task.linkedParentId) }
 
+    val context = LocalContext.current
     val showTimePicker = {
         val calendar = java.util.Calendar.getInstance()
         val initialHour = selectedStartTime?.div(60) ?: calendar.get(java.util.Calendar.HOUR_OF_DAY)
         val initialMinute = selectedStartTime?.rem(60) ?: calendar.get(java.util.Calendar.MINUTE)
-
-        TimePickerDialog(
-            context,
-            { _, hourOfDay, minute ->
-                selectedStartTime = (hourOfDay * 60) + minute
-            },
-            initialHour,
-            initialMinute,
-            true
-        ).show()
+        TimePickerDialog(context, { _, h, m -> selectedStartTime = (h * 60) + m }, initialHour, initialMinute, true).show()
     }
 
     AlertDialog(
@@ -63,49 +59,84 @@ fun EditTaskDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "Редагувати справу")
-                // Кнопка видалення
+                Text("Редагувати справу")
                 IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Видалити",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Icon(Icons.Default.Delete, "Видалити", tint = MaterialTheme.colorScheme.error)
                 }
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 1. Назва
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Назва справи") },
+                    label = { Text("Назва") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // --- ДВА ПОЛЯ ДЛЯ ВВЕДЕННЯ ---
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                // 2. Тривалість (Год : Хв)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = hoursText,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) hoursText = it },
+                        onValueChange = { if (it.all { c -> c.isDigit() }) hoursText = it },
                         label = { Text("Год") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
-
                     OutlinedTextField(
                         value = minutesText,
-                        onValueChange = { if (it.all { char -> char.isDigit() }) minutesText = it },
+                        onValueChange = { if (it.all { c -> c.isDigit() }) minutesText = it },
                         label = { Text("Хв") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
                 }
-                // -----------------------------
 
+                // 3. РЯДОК ДІЙ: Прив'язка + Замок
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Кнопка Ланцюжка (Прив'язати)
+                    OutlinedButton(
+                        onClick = {
+                            if (parentId == null) {
+                                // Тестова логіка: прив'язати до попередньої (ID - 1)
+                                parentId = (task.id - 1).coerceAtLeast(1)
+                            } else {
+                                parentId = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = if (parentId != null) Icons.Default.Link else Icons.Default.LinkOff,
+                            contentDescription = null
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (parentId != null) "ID: $parentId" else "Прив'язати",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Кнопка Замка (Стіна)
+                    FilledTonalIconToggleButton(
+                        checked = isLocked,
+                        onCheckedChange = { isLocked = it }
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = "Lock task",
+                            tint = if (isLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // 4. Час початку
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -114,13 +145,9 @@ fun EditTaskDialog(
                     Text(
                         text = if (selectedStartTime != null)
                             "Початок: ${minutesToTime(selectedStartTime!!)}"
-                        else "Без часу (у Вхідні)",
-                        style = MaterialTheme.typography.bodyMedium
+                        else "Без часу"
                     )
-
-                    TextButton(onClick = showTimePicker) {
-                        Text("Змінити час")
-                    }
+                    TextButton(onClick = showTimePicker) { Text("Змінити час") }
                 }
 
                 if (selectedStartTime != null) {
@@ -134,23 +161,16 @@ fun EditTaskDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    // Збираємо години і хвилини назад у durationMinutes
-                    val h = hoursText.toIntOrNull() ?: 0
-                    val m = minutesText.toIntOrNull() ?: 0
-                    val totalDuration = (h * 60) + m
+            Button(onClick = {
+                val h = hoursText.toIntOrNull() ?: 0
+                val m = minutesText.toIntOrNull() ?: 0
+                val finalDuration = if ((h * 60 + m) > 0) (h * 60 + m) else 30
 
-                    // Мінімум 5 хвилин (або 30, якщо 0)
-                    val finalDuration = if (totalDuration > 0) totalDuration else 30
-
-                    if (title.isNotBlank()) {
-                        onConfirm(title, finalDuration, selectedStartTime)
-                    }
+                if (title.isNotBlank()) {
+                    // Передаємо всі 5 параметрів
+                    onConfirm(title, finalDuration, selectedStartTime, parentId, isLocked)
                 }
-            ) {
-                Text("Зберегти зміни")
-            }
+            }) { Text("Зберегти зміни") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Скасувати") }
