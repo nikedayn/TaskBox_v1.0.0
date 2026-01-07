@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.material3.*
@@ -16,43 +17,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nikidayn.taskbox.model.Task
 
+// Виносимо це значення, щоб знати його в MainActivity
+val DayViewHourHeight = 240.dp
+
 @Composable
 fun DayView(
     tasks: List<Task>,
     startHour: Int = 8,
     endHour: Int = 20,
-    modifier: Modifier = Modifier, // 1. Приймаємо модифікатор (вагу)
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState, // <--- НОВИЙ ПАРАМЕТР: Приймаємо стан ззовні
     onTaskClick: (Task) -> Unit,
     onTaskCheck: (Task) -> Unit,
     onTaskTimeChange: (Task, Int) -> Unit
 ) {
-    val hourHeight = 240.dp
+    val hourHeight = DayViewHourHeight
     val hoursToShow = endHour - startHour
     val totalHeight = hourHeight * (hoursToShow + 1)
 
-    val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val pxPerHour = with(density) { hourHeight.toPx() }
 
-    // 2. Головний контейнер тепер гнучкий і має скрол
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(scrollState)
-            .background(MaterialTheme.colorScheme.background) // <--- ВИПРАВЛЕННЯ
+            .verticalScroll(scrollState) // <--- Використовуємо переданий скрол
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        // 3. Колонка для додавання відступу зверху
         Column(modifier = Modifier.fillMaxWidth()) {
 
-            // --- ОСЬ ВІН, ВІДСТУП ЗВЕРХУ (всередині скролу) ---
             Spacer(modifier = Modifier.height(32.dp))
-            // -----------------------------------------------
 
-            // 4. А ось тут вже сама величезна сітка
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(totalHeight) // Фіксуємо висоту тільки для контенту
+                    .height(totalHeight)
             ) {
                 // СІТКА
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -79,7 +78,7 @@ fun DayView(
                                 color = Color.Gray,
                                 modifier = Modifier
                                     .padding(start = 8.dp)
-                                    .offset(y = (-8).dp) // Текст піднятий, але завдяки Spacer(32dp) він не обріжеться
+                                    .offset(y = (-8).dp)
                             )
                         }
                     }
@@ -101,10 +100,9 @@ fun DayView(
                         ) {
                             TimelineItem(
                                 task = task,
-                                minTime = startHour * 60, // <-- ПЕРЕДАЄМО МІНІМУМ (у хвилинах)
+                                minTime = startHour * 60,
                                 onCheck = { onTaskCheck(task) },
                                 onClick = { onTaskClick(task) },
-                                onLongClick = {},
                                 onTimeChange = { newMinutes ->
                                     val clampedMinutes = newMinutes.coerceIn(0, 1439)
                                     onTaskTimeChange(task, clampedMinutes)
@@ -114,8 +112,6 @@ fun DayView(
                     }
                 }
             }
-
-            // Можна додати відступ і знизу
             Spacer(modifier = Modifier.height(50.dp))
         }
     }

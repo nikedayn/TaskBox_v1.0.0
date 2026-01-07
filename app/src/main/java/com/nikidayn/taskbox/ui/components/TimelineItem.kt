@@ -1,19 +1,17 @@
 package com.nikidayn.taskbox.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -27,50 +25,38 @@ import com.nikidayn.taskbox.utils.formatDuration
 import com.nikidayn.taskbox.utils.minutesToTime
 import kotlin.math.roundToInt
 
-
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TimelineItem(
     task: Task,
     minTime: Int = 0,
     isLast: Boolean = false,
-    isSelected: Boolean = false,
     onCheck: () -> Unit,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
     onTimeChange: (Int) -> Unit
 ) {
     val density = LocalDensity.current
     val heightPerMinute = 4.dp
     val pixelsPerMinute = with(density) { heightPerMinute.toPx() }
 
+    // Визначаємо висоту
     val computedHeight = (task.durationMinutes * heightPerMinute.value).dp.coerceAtLeast(60.dp)
 
     var offsetY by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     var previewTime by remember { mutableStateOf("") }
 
-    // 1. ВИЗНАЧАЄМО КОЛЬОРИ
-    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-    else if (task.isCompleted) Color(0xFFF0F0F0) // Сірий для виконаних
-    else Color(android.graphics.Color.parseColor(task.colorHex))
+    // Колір (без логіки виділення)
+    val containerColor = if (task.isCompleted) Color(0xFFF0F0F0) else Color(android.graphics.Color.parseColor(task.colorHex))
+    val contentColor = if (task.isCompleted) Color.Gray else getContrastColor(task.colorHex)
 
-    // 2. ВИЗНАЧАЄМО КОНТРАСТНИЙ КОЛІР (Чорний або Білий)
-    // Якщо завдання виконане або виділене - беремо системний колір, інакше - рахуємо контраст
-    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-    else if (task.isCompleted) Color.Gray
-    else getContrastColor(task.colorHex)
-
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-    val borderWidth = if (isSelected) 2.dp else 0.dp
-
+    // Показуємо час, якщо він є АБО якщо ми зараз перетягуємо (щоб бачити новий час)
     val showTimePill = task.startTimeMinutes != null || isDragging
 
     Row(
-        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
     ) {
-        Spacer(modifier = Modifier.width(0.dp))
-
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -78,22 +64,66 @@ fun TimelineItem(
                 .padding(bottom = 2.dp, end = 16.dp)
                 .offset { IntOffset(0, offsetY.roundToInt()) }
                 .clip(RoundedCornerShape(16.dp))
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+                // --- ЗМІНА 1: Використовуємо просте натискання для редагування ---
+                .clickable(onClick = onClick)
+                // --- ЗМІНА 2: Довге натискання активує перетягування на всій картці ---
+                .pointerInput(task.startTimeMinutes) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            isDragging = true
+                            // При старті беремо поточний час або minTime (якщо з Вхідних)
+                            val start = task.startTimeMinutes ?: minTime
+                            previewTime = minutesToTime(start)
+                        },
+                        onDragEnd = {
+                            isDragging = false
+                            val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
+                            val baseTime = task.startTimeMinutes ?: minTime
+                            // Обмежуємо час в межах доби
+                            val newStart = (baseTime + minutesChange).coerceIn(0, 1439)
+                            offsetY = 0f
+                            onTimeChange(newStart)
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            offsetY = 0f
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            offsetY += dragAmount.y
+                            // Рахуємо попередній перегляд часу
+                            val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
+                            val baseTime = task.startTimeMinutes ?: minTime
+                            val rawNewTime = (baseTime + minutesChange).coerceIn(0, 1439)
+                            previewTime = minutesToTime(rawNewTime)
+                        }
+                    )
+                }
+                // Додаємо візуальний ефект збільшення при перетягуванні
+                .scale(if (isDragging) 1.02f else 1f),
+
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
                 containerColor = containerColor,
-                contentColor = contentColor // <--- ЗАСТОСОВУЄМО КОЛІР ДО ВСЬОГО ВМІСТУ
+                contentColor = contentColor
             ),
-            border = androidx.compose.foundation.BorderStroke(borderWidth, borderColor)
+            // При перетягуванні додаємо тінь (elevation)
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 0.dp)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
-                    // ТЕКСТ
-                    Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
+                    // ТЕКСТ ЗАВДАННЯ
+                    Column(modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 4.dp)) {
+
+                        // Відступ для "таблетки" часу, щоб текст не наліз
                         if (showTimePill) Spacer(modifier = Modifier.height(20.dp))
 
                         Text(
@@ -102,19 +132,20 @@ fun TimelineItem(
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = contentColor // Явно задаємо колір
+                            color = contentColor
                         )
                         if (task.durationMinutes > 45 || !showTimePill) {
                             Text(
                                 text = formatDuration(task.durationMinutes),
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
-                                color = contentColor.copy(alpha = 0.7f) // Трохи прозоріший
+                                color = contentColor.copy(alpha = 0.7f)
                             )
                         }
                     }
 
-                    // ПРАВА ЧАСТИНА (Чекбокс + Ручка)
+                    // ПРАВА ЧАСТИНА (Замок + Чекбокс)
+                    // --- ЗМІНА 3: Видалено DragHandle та CheckCircle ---
                     Column(
                         modifier = Modifier.fillMaxHeight(),
                         verticalArrangement = Arrangement.Center
@@ -129,66 +160,25 @@ fun TimelineItem(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
-                            if (isSelected) {
-                                Icon(Icons.Default.CheckCircle, "Selected", tint = MaterialTheme.colorScheme.primary)
-                            } else {
-                                // --- ВИПРАВЛЕНИЙ ЧЕКБОКС ---
-                                Checkbox(
-                                    checked = task.isCompleted,
-                                    onCheckedChange = { onCheck() },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.primary,
-                                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                                        uncheckedColor = contentColor.copy(alpha = 0.6f) // <--- РАМКА СТАЄ ЧОРНОЮ НА ЖОВТОМУ
-                                    )
-                                )
 
-                                Spacer(modifier = Modifier.width(4.dp))
-
-                                // --- ВИПРАВЛЕНА РУЧКА (Drag Handle) ---
-                                Icon(
-                                    imageVector = Icons.Default.DragHandle,
-                                    contentDescription = "Move",
-                                    tint = contentColor.copy(alpha = 0.5f), // <--- РУЧКА ТЕЖ АДАПТУЄТЬСЯ
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .pointerInput(task.startTimeMinutes) {
-                                            detectDragGestures(
-                                                onDragStart = {
-                                                    isDragging = true
-                                                    val start = task.startTimeMinutes ?: minTime
-                                                    previewTime = minutesToTime(start)
-                                                },
-                                                onDragEnd = {
-                                                    isDragging = false
-                                                    val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
-                                                    val baseTime = task.startTimeMinutes ?: minTime
-                                                    val newStart = (baseTime + minutesChange).coerceIn(minTime, 1439)
-                                                    offsetY = 0f
-                                                    onTimeChange(newStart)
-                                                },
-                                                onDragCancel = { isDragging = false; offsetY = 0f },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    offsetY += dragAmount.y
-                                                    val minutesChange = (offsetY / pixelsPerMinute).roundToInt()
-                                                    val baseTime = task.startTimeMinutes ?: minTime
-                                                    val rawNewTime = (baseTime + minutesChange).coerceIn(minTime, 1439)
-                                                    previewTime = minutesToTime(rawNewTime)
-                                                }
-                                            )
-                                        }
+                            Checkbox(
+                                checked = task.isCompleted,
+                                onCheckedChange = { onCheck() },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = contentColor, // Адаптуємо чекбокс під колір тексту
+                                    checkmarkColor = containerColor, // Галочка кольору фону картки
+                                    uncheckedColor = contentColor.copy(alpha = 0.6f)
                                 )
-                            }
+                            )
                         }
                     }
                 }
 
-                // ... TimePill (код без змін) ...
+                // ВІДОБРАЖЕННЯ ЧАСУ (Time Pill)
                 if (showTimePill) {
                     val timeToShow = if (isDragging) previewTime else minutesToTime(task.startTimeMinutes ?: minTime)
                     Surface(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if(isDragging) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary, // Змінюємо колір при перетягуванні
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         shape = RoundedCornerShape(topStart = 16.dp, bottomEnd = 8.dp),
                         modifier = Modifier.align(Alignment.TopStart)
