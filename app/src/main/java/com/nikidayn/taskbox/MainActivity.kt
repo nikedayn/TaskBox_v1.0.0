@@ -4,12 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
@@ -17,30 +19,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.nikidayn.taskbox.ui.SettingsScreen
 import com.nikidayn.taskbox.ui.TemplatesScreen
 import com.nikidayn.taskbox.ui.components.*
-import com.nikidayn.taskbox.viewmodel.TaskViewModel
 import com.nikidayn.taskbox.ui.theme.TaskBoxTheme
-import com.nikidayn.taskbox.ui.SettingsScreen
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.foundation.clickable
-import com.nikidayn.taskbox.ui.theme.getContrastColor
-import androidx.compose.foundation.layout.Arrangement
+import com.nikidayn.taskbox.viewmodel.TaskViewModel
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.platform.LocalDensity
-import com.nikidayn.taskbox.ui.components.DayViewHourHeight
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,18 +44,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
 
-            // Ваша логіка вибору теми...
             val useDarkTheme = when (themeMode) {
                 1 -> false
                 2 -> true
-                else -> isSystemInDarkTheme()
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
             }
 
             TaskBoxTheme(darkTheme = useDarkTheme) {
-                // ДОДАЄМО SURFACE ТУТ
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background // Заповнюємо фон кольором теми
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     MainAppStructure(viewModel)
                 }
@@ -75,9 +67,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
     val navController = rememberNavController()
 
     Scaffold(
-        // Цей рядок піднімає меню над системною рискою (виправляє баг з натисканням)
         contentWindowInsets = WindowInsets.navigationBars,
-
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -86,7 +76,6 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                // 1. Календар
                 NavigationBarItem(
                     selected = currentRoute == "timeline",
                     onClick = {
@@ -100,7 +89,6 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     label = { Text("Справи") }
                 )
 
-                // 2. Нотатки
                 NavigationBarItem(
                     selected = currentRoute == "notes",
                     onClick = {
@@ -114,7 +102,6 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     label = { Text("Нотатки") }
                 )
 
-                // 3. Шаблони
                 NavigationBarItem(
                     selected = currentRoute == "templates",
                     onClick = {
@@ -128,7 +115,6 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     label = { Text("Шаблони") }
                 )
 
-                // 4. Налаштування
                 NavigationBarItem(
                     selected = currentRoute == "settings",
                     onClick = {
@@ -163,42 +149,32 @@ fun TaskScreen(viewModel: TaskViewModel) {
     val taskList by viewModel.tasks.collectAsState()
     val notesList by viewModel.notes.collectAsState()
 
-    // ОТРИМУЄМО НАЛАШТУВАННЯ
     val workHours by viewModel.workHours.collectAsState()
     val startH = workHours.first.toInt()
     val endH = workHours.second.toInt()
 
     // --- ЛОГІКА СКРОЛУ ТАЙМЛАЙНУ ---
     val timelineScrollState = rememberScrollState()
-
-    // Обчислюємо час, який зараз "зверху" на екрані
     val density = LocalDensity.current
-    // Використовуємо ту ж висоту, що і в DayView (240.dp)
     val pxPerHour = with(density) { DayViewHourHeight.toPx() }
-    val topSpacerPx = with(density) { 32.dp.toPx() } // Висота верхнього відступу
+    val topSpacerPx = with(density) { 32.dp.toPx() }
 
     val visibleTimeMinutes by remember {
         derivedStateOf {
             val scrollY = timelineScrollState.value
-            // Віднімаємо відступ, щоб отримати чистий скрол по годинах
             val effectiveScroll = (scrollY - topSpacerPx).coerceAtLeast(0f)
             val hoursScrolled = effectiveScroll / pxPerHour
             val minutesScrolled = (hoursScrolled * 60).toInt()
-            // Додаємо до години початку робочого дня
             (startH * 60 + minutesScrolled).coerceIn(0, 1439)
         }
     }
 
     // --- ЛОГІКА КАЛЕНДАРЯ ---
-    // Початкова дата для пейджера (середина величезного списку)
     val initialDate = remember { LocalDate.now() }
     val initialPage = Int.MAX_VALUE / 2
-
-    // Пейджер
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
     val scope = rememberCoroutineScope()
 
-    // Обчислюємо поточну дату на основі сторінки
     val currentDate = remember(pagerState.currentPage) {
         val daysDiff = pagerState.currentPage - initialPage
         initialDate.plusDays(daysDiff.toLong())
@@ -229,11 +205,9 @@ fun TaskScreen(viewModel: TaskViewModel) {
         }
     }
 
-    // --- СТАНИ ---
+    // --- СТАНИ РЕДАГУВАННЯ ---
     var showAddDialog by remember { mutableStateOf(false) }
     var taskToEdit by remember { mutableStateOf<com.nikidayn.taskbox.model.Task?>(null) }
-
-    // Форматування дати для заголовка
     val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
     Scaffold(
@@ -249,7 +223,6 @@ fun TaskScreen(viewModel: TaskViewModel) {
                     }
                 },
                 actions = {
-                    // Кнопка "Сьогодні"
                     if (currentDate != LocalDate.now()) {
                         IconButton(onClick = {
                             scope.launch { pagerState.animateScrollToPage(initialPage) }
@@ -280,8 +253,6 @@ fun TaskScreen(viewModel: TaskViewModel) {
 
         if (taskToEdit != null) {
             val tasksOnSameDay = taskList.filter { it.date == taskToEdit!!.date }
-
-            // Знаходимо прикріплену нотатку та вільні нотатки
             val linkedNote = notesList.find { it.taskId == taskToEdit!!.id }
             val availableNotes = notesList.filter { it.taskId == null }
 
@@ -289,29 +260,31 @@ fun TaskScreen(viewModel: TaskViewModel) {
                 task = taskToEdit!!,
                 potentialParents = tasksOnSameDay,
 
-                // НОВІ ПАРАМЕТРИ
+                // Всі параметри для нотаток передаються:
                 linkedNote = linkedNote,
                 availableNotes = availableNotes,
                 onAttachNote = { note -> viewModel.linkNote(note, taskToEdit!!.id) },
                 onDetachNote = { note -> viewModel.unlinkNote(note) },
                 onCreateNote = { autoTitle ->
-                    // Створюємо нотатку відразу з прив'язкою до цього завдання
                     viewModel.addNote(title = autoTitle, content = "", taskId = taskToEdit!!.id)
                 },
-                // ---
 
                 onDismiss = { taskToEdit = null },
-                onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked ->
+
+                onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked, newDate, newColor ->
                     val updatedTask = taskToEdit!!.copy(
                         title = newTitle,
                         durationMinutes = newDuration,
                         startTimeMinutes = newStart,
                         linkedParentId = newParentId,
-                        isLocked = newIsLocked
+                        isLocked = newIsLocked,
+                        date = newDate,
+                        colorHex = newColor // <--- Зберігаємо колір!
                     )
                     viewModel.updateTask(updatedTask)
                     taskToEdit = null
                 },
+
                 onDelete = {
                     viewModel.deleteTask(taskToEdit!!)
                     taskToEdit = null
@@ -319,38 +292,80 @@ fun TaskScreen(viewModel: TaskViewModel) {
             )
         }
 
-        // --- PAGER З ДНЯМИ ---
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.padding(innerPadding).fillMaxSize()
         ) { page ->
-            // Обчислюємо дату для ЦІЄЇ сторінки (щоб рендерити правильні дані навіть під час свайпу)
             val pageDate = initialDate.plusDays((page - initialPage).toLong())
             val dateString = pageDate.toString()
-
-            // Фільтруємо завдання для цієї дати
             val tasksForDay = taskList.filter { it.date == dateString }
             val timelineTasks = tasksForDay.filter { it.startTimeMinutes != null }.sortedBy { it.startTimeMinutes }
             val inboxTasks = tasksForDay.filter { it.startTimeMinutes == null }
 
-            // ВМІСТ СТОРІНКИ (ДНЯ)
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- ВХІДНІ ---
-                var isInboxExpanded by remember { mutableStateOf(true) }
+                // --- ВХІДНІ (INBOX) ПОКРАЩЕНО ---
                 if (inboxTasks.isNotEmpty()) {
-                    // ... (заголовок вхідних без змін) ...
+                    var isInboxExpanded by remember { mutableStateOf(true) }
 
-                    if (isInboxExpanded) {
+                    // Header для Вхідних
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isInboxExpanded = !isInboxExpanded }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Inbox,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Вхідні",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                                    Text(
+                                        text = "${inboxTasks.size}",
+                                        modifier = Modifier.padding(horizontal = 4.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isInboxExpanded) "Collapse" else "Expand",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Список Вхідних з анімацією
+                    AnimatedVisibility(visible = isInboxExpanded) {
                         LazyColumn(
-                            modifier = Modifier.heightIn(max = 200.dp),
+                            modifier = Modifier
+                                .heightIn(max = 220.dp)
+                                .fillMaxWidth(),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             itemsIndexed(inboxTasks) { _, task ->
                                 TimelineItem(
                                     task = task,
-                                    // Замість фіксованого startH * 60, передаємо динамічний visibleTimeMinutes
                                     minTime = visibleTimeMinutes,
                                     isLast = true,
                                     onCheck = { viewModel.toggleComplete(task) },
@@ -359,8 +374,8 @@ fun TaskScreen(viewModel: TaskViewModel) {
                                 )
                             }
                         }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
 
                 // --- ТАЙМЛАЙН ---
@@ -369,7 +384,7 @@ fun TaskScreen(viewModel: TaskViewModel) {
                     startHour = startH,
                     endHour = endH,
                     modifier = Modifier.weight(1f),
-                    scrollState = timelineScrollState, // <--- Передаємо спільний стан скролу
+                    scrollState = timelineScrollState,
                     onTaskCheck = { viewModel.toggleComplete(it) },
                     onTaskClick = { taskToEdit = it },
                     onTaskTimeChange = { task, newTime -> viewModel.changeTaskStartTime(task, newTime) }

@@ -1,6 +1,5 @@
 package com.nikidayn.taskbox.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -9,35 +8,41 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+// Темна тема: Синій акцент, темний фон, темно-сірі картки
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = BrandBlue,
+    onPrimary = Color.White,
+    secondary = BrandBlueLight,
+    tertiary = Pink80, // Можна залишити для дрібних акцентів або замінити на синій
+
+    background = BackgroundDark,    // Чорний фон (0xFF121212)
+    surface = SurfaceDark,          // Темно-сірі картки (0xFF252525)
+
+    onBackground = TextPrimaryDark,
+    onSurface = TextPrimaryDark
 )
 
+// Світла тема: Синій акцент, світлий фон, білі картки
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = BrandBlue,
     onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    secondary = BrandBlueDark,
+    tertiary = Pink40,
+
+    background = BackgroundLight,
+    surface = SurfaceWhite,
+
+    onBackground = TextPrimaryLight,
+    onSurface = TextPrimaryLight
 )
 
 @Composable
 fun TaskBoxTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false, // Вимкнено, щоб зберегти наш синій стиль
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -45,7 +50,6 @@ fun TaskBoxTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }

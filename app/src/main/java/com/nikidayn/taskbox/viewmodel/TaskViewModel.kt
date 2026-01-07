@@ -75,10 +75,25 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     val templates: StateFlow<List<TaskTemplate>> = dao.getAllTemplates()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Створити новий шаблон
-    fun addTemplate(title: String, duration: Int, emoji: String) {
+    // Оновлена функція addTemplate (додано color)
+    fun addTemplate(title: String, duration: Int, emoji: String, color: String = "#FFEB3B") {
         viewModelScope.launch {
-            dao.insertTemplate(TaskTemplate(title = title, durationMinutes = duration, iconEmoji = emoji))
+            val newTemplate = TaskTemplate(
+                title = title,
+                durationMinutes = duration,
+                iconEmoji = emoji,
+                colorHex = color
+            )
+            dao.insertTemplate(newTemplate)
+        }
+    }
+
+    // Нова функція updateTemplate
+    fun updateTemplate(template: TaskTemplate) {
+        viewModelScope.launch {
+            // У DAO має бути @Update fun updateTemplate(t: TaskTemplate)
+            // Якщо його немає, додайте його в TaskDao.kt
+            dao.insertTemplate(template) // Insert з OnConflictStrategy.REPLACE працює як Update
         }
     }
 
