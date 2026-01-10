@@ -20,6 +20,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.nikidayn.taskbox.model.TaskTemplate
 import com.nikidayn.taskbox.ui.components.ColorSelector
 import com.nikidayn.taskbox.ui.theme.getContrastColor
@@ -56,9 +58,11 @@ fun TemplatesScreen(viewModel: TaskViewModel) {
             }
 
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 150.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                columns = GridCells.Adaptive(minSize = 160.dp), // Трохи ширші картки
+                horizontalArrangement = Arrangement.spacedBy(12.dp), // Відступ по горизонталі
+                verticalArrangement = Arrangement.spacedBy(12.dp),   // Такий самий відступ по вертикалі
+                contentPadding = PaddingValues(bottom = 80.dp),      // Відступ знизу, щоб FAB не перекривав
+                modifier = Modifier.fillMaxSize()
             ) {
                 items(templates) { template ->
                     TemplateItem(
@@ -114,16 +118,15 @@ fun TemplatesScreen(viewModel: TaskViewModel) {
 fun TemplateItem(
     template: TaskTemplate,
     onClick: () -> Unit,
-    onLongClick: () -> Unit, // Новий колбек
+    onLongClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val textColor = getContrastColor(template.colorHex)
     val haptics = LocalHapticFeedback.current
 
     Card(
-        // Використовуємо modifier для combinedClickable замість onClick у Card
         modifier = Modifier
-            .height(120.dp)
+            .height(140.dp) // Трохи збільшимо висоту для "повітря"
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = {
@@ -134,21 +137,65 @@ fun TemplateItem(
         colors = CardDefaults.cardColors(
             containerColor = Color(android.graphics.Color.parseColor(template.colorHex)),
             contentColor = textColor
-        )
+        ),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp) // Більш округлі кути
     ) {
-        Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-            Column(modifier = Modifier.align(Alignment.Center)) {
-                Text(text = template.iconEmoji, fontSize = 32.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(text = template.title, style = MaterialTheme.typography.titleMedium)
-                Text(text = "${template.durationMinutes} хв", style = MaterialTheme.typography.bodySmall)
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp)
+        ) {
+            // 1. ЕМОДЗІ (Лівий верхній кут)
+            Text(
+                text = template.iconEmoji,
+                fontSize = 28.sp,
+                modifier = Modifier.align(Alignment.TopStart)
+            )
 
+            // 2. КНОПКА ВИДАЛИТИ (Правий верхній кут)
             IconButton(
                 onClick = onDelete,
-                modifier = Modifier.align(Alignment.TopEnd).size(24.dp)
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(24.dp)
+                    .offset(x = 4.dp, y = (-4).dp) // Трохи підсунути в кут
             ) {
-                Icon(Icons.Default.Delete, contentDescription = null, tint = textColor.copy(alpha = 0.6f))
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = textColor.copy(alpha = 0.5f)
+                )
+            }
+
+            // 3. ТЕКСТ І ЧАС (Знизу зліва)
+            Column(
+                modifier = Modifier.align(Alignment.BottomStart)
+            ) {
+                Text(
+                    text = template.title,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp // Фіксований розмір шрифту
+                    ),
+                    maxLines = 2, // Обмеження рядків, щоб не вилазило
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Час у "таблетці" (краще виглядає)
+                Surface(
+                    color = textColor.copy(alpha = 0.1f), // Напівпрозорий фон
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                    contentColor = textColor
+                ) {
+                    Text(
+                        text = "${template.durationMinutes} хв",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }

@@ -25,7 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.geometry.Offset
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.utils.formatDuration
 import com.nikidayn.taskbox.utils.minutesToTime
@@ -64,8 +66,6 @@ fun TimelineItem(
     }
 
     // ЛОГІКА ВІДОБРАЖЕННЯ "ТАБЛЕТКИ" (Overlay Pill):
-    // 1. Якщо це велике завдання (Standard) -> показуємо завжди, якщо є час.
-    // 2. Якщо це мале завдання (Compact) -> показуємо ТІЛЬКИ коли тягнемо (isDragging).
     val showOverlayTime = if (isCompact) {
         isDragging
     } else {
@@ -147,7 +147,6 @@ fun TimelineItem(
                 ) {
                     if (isCompact) {
                         // --- КОМПАКТНИЙ РЕЖИМ (< 15 хв) ---
-                        // Тривалість тут НЕ показується, тільки час і назва
                         Row(
                             modifier = Modifier.fillMaxSize(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -157,7 +156,7 @@ fun TimelineItem(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                // ПОКАЗУЄМО ТЕКСТ ЧАСУ ЛИШЕ ЯКЩО НЕ ТЯГНЕМО
+                                // Час (якщо не тягнемо)
                                 if (task.startTimeMinutes != null && !isDragging) {
                                     Text(
                                         text = minutesToTime(task.startTimeMinutes),
@@ -167,6 +166,13 @@ fun TimelineItem(
                                         modifier = Modifier.padding(end = 6.dp)
                                     )
                                 }
+
+                                // СМАЙЛИК (Compact)
+                                Text(
+                                    text = task.iconEmoji,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    fontSize = 14.sp
+                                )
 
                                 Text(
                                     text = task.title,
@@ -215,17 +221,26 @@ fun TimelineItem(
                                 // Відступ під "таблетку" часу
                                 if (showOverlayTime) Spacer(modifier = Modifier.height(18.dp))
 
-                                Text(
-                                    text = task.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = if (task.durationMinutes < 45) 1 else 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textDecoration = if (task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                                    color = if (task.isCompleted) Color.Gray else MaterialTheme.colorScheme.onSurface
-                                )
+                                // Рядок з Смайликом і Назвою
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // СМАЙЛИК (Standard)
+                                    Text(
+                                        text = task.iconEmoji,
+                                        modifier = Modifier.padding(end = 8.dp),
+                                        fontSize = 18.sp
+                                    )
 
-                                // ВИПРАВЛЕНО: Тепер тривалість показується завжди для стандартних карток
+                                    Text(
+                                        text = task.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = if (task.durationMinutes < 45) 1 else 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textDecoration = if (task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                                        color = if (task.isCompleted) Color.Gray else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
                                 Text(
                                     text = formatDuration(task.durationMinutes),
                                     style = MaterialTheme.typography.bodySmall,
@@ -284,6 +299,109 @@ fun TimelineItem(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun InboxItem(
+    task: Task,
+    onCheck: () -> Unit,
+    onClick: () -> Unit,
+    onDragStart: (Offset) -> Unit = {},
+    onDragEnd: () -> Unit = {},
+    onDrag: (Offset) -> Unit = {}
+) {
+    val taskColor = try {
+        Color(android.graphics.Color.parseColor(task.colorHex))
+    } catch (e: Exception) {
+        MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+            .height(60.dp)
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset -> onDragStart(offset) },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount)
+                    }
+                )
+            }
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Кольорова смужка зліва
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(6.dp)
+                    .background(if (task.isCompleted) Color.LightGray else taskColor)
+            )
+
+            // СМАЙЛИК (Inbox)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(start = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = task.iconEmoji,
+                    fontSize = 22.sp
+                )
+            }
+
+            // Контент
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp, end = 12.dp), // Трохи змінили відступи
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                        color = if (task.isCompleted) Color.Gray else MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = formatDuration(task.durationMinutes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Чекбокс
+                Checkbox(
+                    checked = task.isCompleted,
+                    onCheckedChange = { onCheck() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = taskColor,
+                        uncheckedColor = taskColor.copy(alpha = 0.5f)
+                    )
+                )
             }
         }
     }

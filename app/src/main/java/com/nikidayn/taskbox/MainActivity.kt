@@ -19,13 +19,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.ui.SettingsScreen
 import com.nikidayn.taskbox.ui.TemplatesScreen
 import com.nikidayn.taskbox.ui.components.*
@@ -35,6 +41,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -159,6 +166,13 @@ fun TaskScreen(viewModel: TaskViewModel) {
     val pxPerHour = with(density) { DayViewHourHeight.toPx() }
     val topSpacerPx = with(density) { 32.dp.toPx() }
 
+    // --- СТАНИ ДЛЯ DRAG & DROP ---
+    var draggingTask by remember { mutableStateOf<Task?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) } // Поточна зміна позиції пальця
+
+    // Координати зони Таймлайну (куди кидати)
+    var dayViewBoundsInWindow by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+
     val visibleTimeMinutes by remember {
         derivedStateOf {
             val scrollY = timelineScrollState.value
@@ -207,188 +221,259 @@ fun TaskScreen(viewModel: TaskViewModel) {
 
     // --- СТАНИ РЕДАГУВАННЯ ---
     var showAddDialog by remember { mutableStateOf(false) }
-    var taskToEdit by remember { mutableStateOf<com.nikidayn.taskbox.model.Task?>(null) }
+    var taskToEdit by remember { mutableStateOf<Task?>(null) }
     val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        modifier = Modifier.clickable { showDatePicker = true },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(currentDate.format(dateFormatter), fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Date")
-                    }
-                },
-                actions = {
-                    if (currentDate != LocalDate.now()) {
-                        IconButton(onClick = {
-                            scope.launch { pagerState.animateScrollToPage(initialPage) }
-                        }) {
-                            Icon(Icons.Default.Today, contentDescription = "Today")
+    // Головний контейнер Box, що дозволяє малювати "Примару" поверх усього
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(
+                            modifier = Modifier.clickable { showDatePicker = true },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(currentDate.format(dateFormatter), fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Date")
+                        }
+                    },
+                    actions = {
+                        if (currentDate != LocalDate.now()) {
+                            IconButton(onClick = {
+                                scope.launch { pagerState.animateScrollToPage(initialPage) }
+                            }) {
+                                Icon(Icons.Default.Today, contentDescription = "Today")
+                            }
                         }
                     }
+                )
+            },
+            floatingActionButton = {
+                FloatingActionButton(onClick = { showAddDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
                 }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
             }
-        }
-    ) { innerPadding ->
+        ) { innerPadding ->
 
-        if (showAddDialog) {
-            AddTaskDialog(
-                selectedDate = currentDate.toString(),
-                onDismiss = { showAddDialog = false },
-                onConfirm = { title, duration, start, date ->
-                    viewModel.addTask(title, duration, start, date)
-                    showAddDialog = false
-                }
-            )
-        }
+            if (showAddDialog) {
+                AddTaskDialog(
+                    selectedDate = currentDate.toString(),
+                    onDismiss = { showAddDialog = false },
+                    onConfirm = { title, duration, start, date ->
+                        viewModel.addTask(title, duration, start, date)
+                        showAddDialog = false
+                    }
+                )
+            }
 
-        if (taskToEdit != null) {
-            val tasksOnSameDay = taskList.filter { it.date == taskToEdit!!.date }
-            val linkedNote = notesList.find { it.taskId == taskToEdit!!.id }
-            val availableNotes = notesList.filter { it.taskId == null }
+            if (taskToEdit != null) {
+                val tasksOnSameDay = taskList.filter { it.date == taskToEdit!!.date }
+                val linkedNote = notesList.find { it.taskId == taskToEdit!!.id }
+                val availableNotes = notesList.filter { it.taskId == null }
 
-            EditTaskDialog(
-                task = taskToEdit!!,
-                potentialParents = tasksOnSameDay,
+                EditTaskDialog(
+                    task = taskToEdit!!,
+                    potentialParents = tasksOnSameDay,
+                    linkedNote = linkedNote,
+                    availableNotes = availableNotes,
+                    onAttachNote = { note -> viewModel.linkNote(note, taskToEdit!!.id) },
+                    onDetachNote = { note -> viewModel.unlinkNote(note) },
+                    onCreateNote = { autoTitle ->
+                        viewModel.addNote(title = autoTitle, content = "", taskId = taskToEdit!!.id)
+                    },
+                    onDismiss = { taskToEdit = null },
+                    onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked, newDate, newColor, newEmoji ->
+                        val updatedTask = taskToEdit!!.copy(
+                            title = newTitle,
+                            durationMinutes = newDuration,
+                            startTimeMinutes = newStart,
+                            linkedParentId = newParentId,
+                            isLocked = newIsLocked,
+                            date = newDate,
+                            colorHex = newColor,
+                            iconEmoji = newEmoji // <--- ЗБЕРІГАЄМО В БАЗУ ПРАВИЛЬНО
+                        )
+                        viewModel.updateTask(updatedTask)
+                        taskToEdit = null
+                    },
+                    onDelete = {
+                        viewModel.deleteTask(taskToEdit!!)
+                        taskToEdit = null
+                    }
+                )
+            }
 
-                // Всі параметри для нотаток передаються:
-                linkedNote = linkedNote,
-                availableNotes = availableNotes,
-                onAttachNote = { note -> viewModel.linkNote(note, taskToEdit!!.id) },
-                onDetachNote = { note -> viewModel.unlinkNote(note) },
-                onCreateNote = { autoTitle ->
-                    viewModel.addNote(title = autoTitle, content = "", taskId = taskToEdit!!.id)
-                },
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.padding(innerPadding).fillMaxSize()
+            ) { page ->
+                val pageDate = initialDate.plusDays((page - initialPage).toLong())
+                val dateString = pageDate.toString()
+                val tasksForDay = taskList.filter { it.date == dateString }
+                val timelineTasks = tasksForDay.filter { it.startTimeMinutes != null }
+                    .sortedBy { it.startTimeMinutes }
+                val inboxTasks = tasksForDay.filter { it.startTimeMinutes == null }
 
-                onDismiss = { taskToEdit = null },
+                Column(modifier = Modifier.fillMaxSize()) {
 
-                onConfirm = { newTitle, newDuration, newStart, newParentId, newIsLocked, newDate, newColor ->
-                    val updatedTask = taskToEdit!!.copy(
-                        title = newTitle,
-                        durationMinutes = newDuration,
-                        startTimeMinutes = newStart,
-                        linkedParentId = newParentId,
-                        isLocked = newIsLocked,
-                        date = newDate,
-                        colorHex = newColor // <--- Зберігаємо колір!
-                    )
-                    viewModel.updateTask(updatedTask)
-                    taskToEdit = null
-                },
+                    // --- ВХІДНІ (INBOX) ---
+                    if (inboxTasks.isNotEmpty()) {
+                        var isInboxExpanded by remember { mutableStateOf(true) }
 
-                onDelete = {
-                    viewModel.deleteTask(taskToEdit!!)
-                    taskToEdit = null
-                }
-            )
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.padding(innerPadding).fillMaxSize()
-        ) { page ->
-            val pageDate = initialDate.plusDays((page - initialPage).toLong())
-            val dateString = pageDate.toString()
-            val tasksForDay = taskList.filter { it.date == dateString }
-            val timelineTasks = tasksForDay.filter { it.startTimeMinutes != null }.sortedBy { it.startTimeMinutes }
-            val inboxTasks = tasksForDay.filter { it.startTimeMinutes == null }
-
-            Column(modifier = Modifier.fillMaxSize()) {
-
-                // --- ВХІДНІ (INBOX) ПОКРАЩЕНО ---
-                if (inboxTasks.isNotEmpty()) {
-                    var isInboxExpanded by remember { mutableStateOf(true) }
-
-                    // Header для Вхідних
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isInboxExpanded = !isInboxExpanded }
-                    ) {
-                        Row(
+                        // Header
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .clickable { isInboxExpanded = !isInboxExpanded }
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Inbox,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Вхідні",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                                    Text(
-                                        text = "${inboxTasks.size}",
-                                        modifier = Modifier.padding(horizontal = 4.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        style = MaterialTheme.typography.labelSmall
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Inbox,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Вхідні",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                                        Text(
+                                            text = "${inboxTasks.size}",
+                                            modifier = Modifier.padding(horizontal = 4.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isInboxExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Список Вхідних з підтримкою Drag & Drop
+                        AnimatedVisibility(visible = isInboxExpanded) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .heightIn(max = 220.dp)
+                                    .fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                itemsIndexed(inboxTasks) { _, task ->
+                                    val isDraggingThis = draggingTask?.id == task.id
+
+                                    // Ховаємо оригінальну картку, коли тягнемо її копію
+                                    Box(modifier = Modifier.alpha(if (isDraggingThis) 0.0f else 1f)) {
+                                        InboxItem(
+                                            task = task,
+                                            onCheck = { viewModel.toggleComplete(task) },
+                                            onClick = { taskToEdit = task },
+
+                                            // --- ЛОГІКА DRAG START ---
+                                            onDragStart = { _ ->
+                                                draggingTask = task
+                                                dragOffset = Offset.Zero // Скидаємо зміщення
+                                            },
+                                            // --- ЛОГІКА DRAG MOVE ---
+                                            onDrag = { change ->
+                                                dragOffset += change
+                                            },
+                                            // --- ЛОГІКА DRAG END ---
+                                            onDragEnd = {
+                                                val dropY = dragOffset.y
+
+                                                // Евристика: Якщо потягнули вниз більше ніж на 100px (з Вхідних на Таймлайн)
+                                                if (dropY > 100) {
+                                                    val scrollY = timelineScrollState.value.toFloat()
+
+                                                    // Розрахунок часу (приблизний, відносно верху екрану під вхідними)
+                                                    // -200 - це приблизна поправка на висоту хедера та заголовка вхідних
+                                                    val relativeDropY = dropY + scrollY - 200
+                                                    val hoursFromStart = relativeDropY / pxPerHour
+                                                    val minutesFromStart = (hoursFromStart * 60).toInt()
+
+                                                    val newStartMinutes = (startH * 60 + minutesFromStart).coerceIn(0, 1439)
+
+                                                    if (draggingTask != null) {
+                                                        viewModel.changeTaskStartTime(draggingTask!!, newStartMinutes)
+                                                    }
+                                                }
+
+                                                draggingTask = null
+                                                dragOffset = Offset.Zero
+                                            }
+                                        )
+                                    }
                                 }
                             }
-                            Icon(
-                                imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (isInboxExpanded) "Collapse" else "Expand",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
 
-                    // Список Вхідних з анімацією
-                    AnimatedVisibility(visible = isInboxExpanded) {
-                        LazyColumn(
-                            modifier = Modifier
-                                .heightIn(max = 220.dp)
-                                .fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            itemsIndexed(inboxTasks) { _, task ->
-                                TimelineItem(
-                                    task = task,
-                                    minTime = visibleTimeMinutes,
-                                    isLast = true,
-                                    onCheck = { viewModel.toggleComplete(task) },
-                                    onClick = { taskToEdit = task },
-                                    onTimeChange = { newTime -> viewModel.changeTaskStartTime(task, newTime) }
+                    // --- ТАЙМЛАЙН ---
+                    DayView(
+                        tasks = timelineTasks,
+                        startHour = startH,
+                        endHour = endH,
+                        modifier = Modifier
+                            .weight(1f)
+                            .onGloballyPositioned { coordinates ->
+                                val position = coordinates.positionInWindow()
+                                val size = coordinates.size
+                                dayViewBoundsInWindow = androidx.compose.ui.geometry.Rect(
+                                    offset = position,
+                                    size = androidx.compose.ui.geometry.Size(size.width.toFloat(), size.height.toFloat())
                                 )
-                            }
+                            },
+                        scrollState = timelineScrollState,
+                        onTaskCheck = { viewModel.toggleComplete(it) },
+                        onTaskClick = { taskToEdit = it },
+                        onTaskTimeChange = { task, newTime ->
+                            viewModel.changeTaskStartTime(task, newTime)
                         }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    )
                 }
+            }
+        }
 
-                // --- ТАЙМЛАЙН ---
-                DayView(
-                    tasks = timelineTasks,
-                    startHour = startH,
-                    endHour = endH,
-                    modifier = Modifier.weight(1f),
-                    scrollState = timelineScrollState,
-                    onTaskCheck = { viewModel.toggleComplete(it) },
-                    onTaskClick = { taskToEdit = it },
-                    onTaskTimeChange = { task, newTime -> viewModel.changeTaskStartTime(task, newTime) }
-                )
+        // --- ВІЗУАЛІЗАЦІЯ ПЕРЕТЯГУВАННЯ (GHOST CARD) ---
+        if (draggingTask != null) {
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
+                    .padding(start = 64.dp, top = 120.dp) // Початковий зсув, щоб картка була під пальцем
+                    .width(200.dp)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    elevation = CardDefaults.cardElevation(8.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = draggingTask?.title ?: "",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }

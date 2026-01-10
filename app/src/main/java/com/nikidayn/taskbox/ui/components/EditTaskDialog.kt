@@ -1,10 +1,14 @@
 package com.nikidayn.taskbox.ui.components
 
 import android.app.TimePickerDialog
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.nikidayn.taskbox.model.Note
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.ui.theme.getContrastColor
@@ -40,22 +46,26 @@ fun EditTaskDialog(
     onDetachNote: (Note) -> Unit,
     onCreateNote: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?, newParentId: Int?, newIsLocked: Boolean, newDate: String, newColor: String) -> Unit,
+    // ОНОВЛЕНО: додано параметр newEmoji
+    onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?, newParentId: Int?, newIsLocked: Boolean, newDate: String, newColor: String, newEmoji: String) -> Unit,
     onDelete: () -> Unit
 ) {
+    // 1. Більше не "парсимо" назву, беремо як є
     var title by remember { mutableStateOf(task.title) }
-    var isLocked by remember { mutableStateOf(task.isLocked) }
 
-    // КОЛІР (відновлено)
+    // 2. Беремо смайлик з поля iconEmoji (переконайтесь, що воно є в Task.kt)
+    var emoji by remember { mutableStateOf(task.iconEmoji) }
+    var showEmojiPicker by remember { mutableStateOf(false) }
+
+    var isLocked by remember { mutableStateOf(task.isLocked) }
     var selectedColor by remember { mutableStateOf(task.colorHex) }
 
-    // ДАТА
     var selectedDate by remember {
         mutableStateOf(try { LocalDate.parse(task.date) } catch (e: Exception) { LocalDate.now() })
     }
     var showDatePicker by remember { mutableStateOf(false) }
 
-    // ТРИВАЛІСТЬ
+    // Duration State
     var hoursText by remember {
         val h = task.durationMinutes / 60
         mutableStateOf(if (h > 0) h.toString() else "")
@@ -66,12 +76,8 @@ fun EditTaskDialog(
     }
 
     var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
-
-    // ПРИВ'ЯЗКА
     var parentId by remember { mutableStateOf(task.linkedParentId) }
     var isParentMenuExpanded by remember { mutableStateOf(false) }
-
-    // НОТАТКИ
     var isNoteMenuExpanded by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -98,6 +104,17 @@ fun EditTaskDialog(
             },
             dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Скасувати") } }
         ) { DatePicker(state = datePickerState) }
+    }
+
+    // --- ВІКНО ПІКЕРА СМАЙЛИКІВ ---
+    if (showEmojiPicker) {
+        EmojiSelectorDialog(
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { selected ->
+                emoji = selected
+                showEmojiPicker = false
+            }
+        )
     }
 
     AlertDialog(
@@ -130,22 +147,40 @@ fun EditTaskDialog(
             }
         },
         text = {
-            // Додано verticalScroll, щоб контент не обрізався на малих екранах
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-                // 1. НАЗВА
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Назва справи") },
+                // 1. НАЗВА ТА СМАЙЛИК
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Кнопка-смайлик
+                    Surface(
+                        onClick = { showEmojiPicker = true },
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = emoji, fontSize = 24.sp)
+                        }
+                    }
 
-                // 2. КОЛІР (ВІДНОВЛЕНО)
+                    // Поле назви
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Назва справи") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                // 2. КОЛІР
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Колір картки", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ColorSelector(
@@ -154,7 +189,7 @@ fun EditTaskDialog(
                     )
                 }
 
-                // 3. ТРИВАЛІСТЬ (Год + Хв)
+                // 3. ТРИВАЛІСТЬ
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -270,7 +305,7 @@ fun EditTaskDialog(
                     }
                 }
 
-                // 6. НОТАТКИ (ВІДНОВЛЕНО)
+                // 6. НОТАТКИ
                 Divider(color = MaterialTheme.colorScheme.outlineVariant)
 
                 if (linkedNote != null) {
@@ -338,11 +373,23 @@ fun EditTaskDialog(
                 val h = hoursText.toIntOrNull() ?: 0
                 val m = minutesText.toIntOrNull() ?: 0
                 val finalDuration = if ((h * 60 + m) > 0) (h * 60 + m) else 30
+
                 if (title.isNotBlank()) {
-                    onConfirm(title, finalDuration, selectedStartTime, parentId, isLocked, selectedDate.toString(), selectedColor)
+                    // ЗБЕРЕЖЕННЯ: Передаємо emoji окремим параметром
+                    onConfirm(
+                        title,
+                        finalDuration,
+                        selectedStartTime,
+                        parentId,
+                        isLocked,
+                        selectedDate.toString(),
+                        selectedColor,
+                        emoji // <--- Новий аргумент
+                    )
                 }
             }) { Text("Зберегти") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }
     )
 }
+

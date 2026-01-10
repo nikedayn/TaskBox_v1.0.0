@@ -67,7 +67,8 @@ fun SettingsScreen(viewModel: TaskViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .statusBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Text(

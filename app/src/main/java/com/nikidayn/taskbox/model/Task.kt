@@ -10,17 +10,14 @@ data class Task(
     val id: Int = 0,
     val title: String,
     val description: String = "",
-
     val startTimeMinutes: Int? = null,
     val durationMinutes: Int = 30,
-
-    // НОВЕ ПОЛЕ: Дата завдання (за замовчуванням - сьогодні)
     val date: String = LocalDate.now().toString(),
-
     val isCompleted: Boolean = false,
     val linkedParentId: Int? = null,
     val isLocked: Boolean = false,
-    val colorHex: String = "#FFEB3B"
+    val colorHex: String = "#FFEB3B",
+    val iconEmoji: String = "⚡"
 ) {
     val endTimeMinutes: Int?
         get() = startTimeMinutes?.plus(durationMinutes)
