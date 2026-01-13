@@ -13,24 +13,27 @@ import androidx.compose.ui.unit.dp
 import com.nikidayn.taskbox.utils.minutesToTime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.viewinterop.AndroidView // Якщо не імпортувалося автоматично
+import android.widget.NumberPicker
 
 @Composable
 fun AddTaskDialog(
-    selectedDate: String, // Приходить у форматі YYYY-MM-DD
+    selectedDate: String,
     onDismiss: () -> Unit,
     onConfirm: (title: String, duration: Int, startTime: Int?, date: String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var hoursText by remember { mutableStateOf("") }
-    var minutesText by remember { mutableStateOf("30") }
+
+    // 👇 ЗМІНЕНО: Замість hoursText/minutesText використовуємо одне число
+    var durationMinutes by remember { mutableStateOf(30) }
+
     var selectedStartTime by remember { mutableStateOf<Int?>(null) }
 
-    // Логіка форматування дати для заголовка (YYYY-MM-DD -> dd.MM.yyyy)
     val displayDate = remember(selectedDate) {
         try {
             LocalDate.parse(selectedDate).format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
         } catch (e: Exception) {
-            selectedDate // Якщо помилка, показуємо як є
+            selectedDate
         }
     }
 
@@ -44,7 +47,6 @@ fun AddTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        // Використовуємо відформатовану дату displayDate
         title = { Text("Справа на $displayDate") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -52,18 +54,15 @@ fun AddTaskDialog(
                     value = title, onValueChange = { title = it },
                     label = { Text("Назва справи") }, modifier = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = hoursText, onValueChange = { if (it.all { c -> c.isDigit() }) hoursText = it },
-                        label = { Text("Год") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = minutesText, onValueChange = { if (it.all { c -> c.isDigit() }) minutesText = it },
-                        label = { Text("Хв") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+
+                // 👇 ВСТАВЛЕНО: Новий компонент вибору "барабаном"
+                Text("Тривалість:", style = MaterialTheme.typography.labelMedium)
+                DurationWheelPicker(
+                    durationMinutes = durationMinutes,
+                    onDurationChange = { durationMinutes = it }
+                )
+                // 👆 КІНЕЦЬ ЗМІН
+
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text(text = if (selectedStartTime != null) "Початок: ${minutesToTime(selectedStartTime!!)}" else "Без часу (у Вхідні)")
                     TextButton(onClick = showTimePicker) { Text(if (selectedStartTime != null) "Змінити" else "Вибрати час") }
@@ -77,11 +76,8 @@ fun AddTaskDialog(
         },
         confirmButton = {
             Button(onClick = {
-                val h = hoursText.toIntOrNull() ?: 0
-                val m = minutesText.toIntOrNull() ?: 0
-                val totalDuration = (h * 60) + m
-                val finalDuration = if (totalDuration > 0) totalDuration else 30
-                // Повертаємо оригінальну selectedDate (YYYY-MM-DD) для бази даних
+                // Якщо 0 хвилин, ставимо 30 за замовчуванням
+                val finalDuration = if (durationMinutes > 0) durationMinutes else 30
                 if (title.isNotBlank()) onConfirm(title, finalDuration, selectedStartTime, selectedDate)
             }) { Text("Створити") }
         },

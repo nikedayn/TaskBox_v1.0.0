@@ -1,17 +1,14 @@
 package com.nikidayn.taskbox.ui.components
 
 import android.app.TimePickerDialog
+import android.widget.NumberPicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -23,11 +20,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.viewinterop.AndroidView
 import com.nikidayn.taskbox.model.Note
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.ui.theme.getContrastColor
@@ -46,14 +42,10 @@ fun EditTaskDialog(
     onDetachNote: (Note) -> Unit,
     onCreateNote: (String) -> Unit,
     onDismiss: () -> Unit,
-    // ОНОВЛЕНО: додано параметр newEmoji
     onConfirm: (newTitle: String, newDuration: Int, newStartTime: Int?, newParentId: Int?, newIsLocked: Boolean, newDate: String, newColor: String, newEmoji: String) -> Unit,
     onDelete: () -> Unit
 ) {
-    // 1. Більше не "парсимо" назву, беремо як є
     var title by remember { mutableStateOf(task.title) }
-
-    // 2. Беремо смайлик з поля iconEmoji (переконайтесь, що воно є в Task.kt)
     var emoji by remember { mutableStateOf(task.iconEmoji) }
     var showEmojiPicker by remember { mutableStateOf(false) }
 
@@ -65,15 +57,8 @@ fun EditTaskDialog(
     }
     var showDatePicker by remember { mutableStateOf(false) }
 
-    // Duration State
-    var hoursText by remember {
-        val h = task.durationMinutes / 60
-        mutableStateOf(if (h > 0) h.toString() else "")
-    }
-    var minutesText by remember {
-        val m = task.durationMinutes % 60
-        mutableStateOf(m.toString())
-    }
+    // --- ЗМІНА: Використовуємо одне числове значення замість тексту ---
+    var durationMinutes by remember { mutableStateOf(task.durationMinutes) }
 
     var selectedStartTime by remember { mutableStateOf(task.startTimeMinutes) }
     var parentId by remember { mutableStateOf(task.linkedParentId) }
@@ -106,7 +91,6 @@ fun EditTaskDialog(
         ) { DatePicker(state = datePickerState) }
     }
 
-    // --- ВІКНО ПІКЕРА СМАЙЛИКІВ ---
     if (showEmojiPicker) {
         EmojiSelectorDialog(
             onDismiss = { showEmojiPicker = false },
@@ -158,7 +142,6 @@ fun EditTaskDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Кнопка-смайлик
                     Surface(
                         onClick = { showEmojiPicker = true },
                         shape = RoundedCornerShape(8.dp),
@@ -170,7 +153,6 @@ fun EditTaskDialog(
                         }
                     }
 
-                    // Поле назви
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
@@ -189,26 +171,12 @@ fun EditTaskDialog(
                     )
                 }
 
-                // 3. ТРИВАЛІСТЬ
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = hoursText,
-                        onValueChange = { if (it.all { c -> c.isDigit() }) hoursText = it },
-                        label = { Text("Години") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = minutesText,
-                        onValueChange = { if (it.all { c -> c.isDigit() }) minutesText = it },
-                        label = { Text("Хвилини") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                // 3. ТРИВАЛІСТЬ (ЗАМІНЕНО НА БАРАБАН)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Тривалість", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    DurationWheelPicker(
+                        durationMinutes = durationMinutes,
+                        onDurationChange = { durationMinutes = it }
                     )
                 }
 
@@ -370,12 +338,10 @@ fun EditTaskDialog(
         },
         confirmButton = {
             Button(onClick = {
-                val h = hoursText.toIntOrNull() ?: 0
-                val m = minutesText.toIntOrNull() ?: 0
-                val finalDuration = if ((h * 60 + m) > 0) (h * 60 + m) else 30
+                // --- ЗМІНА: Використовуємо значення з барабана ---
+                val finalDuration = if (durationMinutes > 0) durationMinutes else 30
 
                 if (title.isNotBlank()) {
-                    // ЗБЕРЕЖЕННЯ: Передаємо emoji окремим параметром
                     onConfirm(
                         title,
                         finalDuration,
@@ -384,7 +350,7 @@ fun EditTaskDialog(
                         isLocked,
                         selectedDate.toString(),
                         selectedColor,
-                        emoji // <--- Новий аргумент
+                        emoji
                     )
                 }
             }) { Text("Зберегти") }
@@ -392,4 +358,3 @@ fun EditTaskDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }
     )
 }
-

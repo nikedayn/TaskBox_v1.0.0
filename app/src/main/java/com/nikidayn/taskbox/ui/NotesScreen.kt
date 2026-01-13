@@ -1,6 +1,8 @@
 package com.nikidayn.taskbox.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -11,9 +13,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,173 +25,157 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import com.nikidayn.taskbox.model.Note
 import com.nikidayn.taskbox.ui.theme.getContrastColor
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun NotesScreen(viewModel: TaskViewModel) {
+fun NotesScreen(
+    viewModel: TaskViewModel,
+    navController: NavController
+) {
     val notes by viewModel.notes.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var noteToEdit by remember { mutableStateOf<Note?>(null) }
-
-    // Локальний стан: чи активовано режим пошуку
+    // Локальний стан пошуку
     var isSearchActive by remember { mutableStateOf(false) }
-
-    // Менеджери для фокусу (клавіатури)
     val focusManager = LocalFocusManager.current
-    val focusRequester = remember { FocusRequester() } // 1. Створюємо запитувач фокусу
+    val focusRequester = remember { FocusRequester() }
 
-    // 2. Ефект: коли isSearchActive стає true -> викликаємо клавіатуру
+    // Авто-фокус при відкритті пошуку
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) {
             focusRequester.requestFocus()
+        } else {
+            focusManager.clearFocus()
         }
     }
 
+    // Закриваємо пошук кнопкою "Назад"
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+        viewModel.onSearchQueryChange("")
+    }
+
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    if (isSearchActive) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = viewModel::onSearchQueryChange,
+                            placeholder = { Text("Пошук...") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                        )
+                    } else {
+                        Text(
+                            "Нотатки",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                navigationIcon = {
+                    if (isSearchActive) {
+                        IconButton(onClick = {
+                            isSearchActive = false
+                            viewModel.onSearchQueryChange("")
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+                        }
+                    }
+                },
+                actions = {
+                    if (!isSearchActive) {
+                        IconButton(onClick = { isSearchActive = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Пошук")
+                        }
+                    } else if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Очистити")
+                        }
+                    }
+                }
+            )
+        },
         floatingActionButton = {
+            // КАСТОМНИЙ FAB ДЛЯ ПІДТРИМКИ ДОВГОГО НАТИСКАННЯ
             Surface(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(FloatingActionButtonDefaults.shape)
+                    .clip(RoundedCornerShape(16.dp)) // Квадратніший стиль
                     .combinedClickable(
-                        onClick = { showAddDialog = true },
+                        onClick = {
+                            // Звичайний клік -> Нова нотатка
+                            navController.navigate("note_detail/-1")
+                        },
                         onLongClick = {
+                            // Довгий клік -> Увімкнути/Вимкнути пошук
                             isSearchActive = !isSearchActive
-                            if (!isSearchActive) {
-                                viewModel.onSearchQueryChange("")
-                                focusManager.clearFocus()
-                            }
+                            if (!isSearchActive) viewModel.onSearchQueryChange("")
                         }
                     ),
-                shape = FloatingActionButtonDefaults.shape,
                 color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 shadowElevation = 6.dp,
                 tonalElevation = 6.dp
             ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = if (isSearchActive) Icons.Default.Search else Icons.Default.Add,
-                        contentDescription = "Add or Search"
+                        contentDescription = "Add or Search",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
+        Column(modifier = Modifier
+            .padding(innerPadding)
+            .padding(horizontal = 16.dp)) {
 
-            // Анімація перемикання між Заголовком і Полем пошуку
-            Crossfade(targetState = isSearchActive, label = "SearchHeader") { active ->
-                if (active) {
-                    // --- ПОЛЕ ПОШУКУ ---
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = viewModel::onSearchQueryChange,
-                        placeholder = { Text("Пошук...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp)
-                            .focusRequester(focusRequester), // 3. Прив'язуємо фокус сюди
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                isSearchActive = false
-                                viewModel.onSearchQueryChange("")
-                                focusManager.clearFocus()
-                            }) {
-                                Icon(Icons.Default.Close, contentDescription = "Close search")
-                            }
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
-                    )
-                } else {
-                    // --- ЗАГОЛОВОК З КНОПКОЮ ПОШУКУ ---
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Нотатки",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        // 4. Додаткова кнопка пошуку зверху
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Повідомлення, якщо список порожній
             if (notes.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = if (isSearchActive) "Нічого не знайдено" else "Тут поки порожньо. Запишіть думку!",
+                        text = if (isSearchActive) "Нічого не знайдено" else "Тут поки порожньо",
                         color = Color.Gray
                     )
                 }
-            }
-
-            LazyVerticalStaggeredGrid(
-                columns = StaggeredGridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalItemSpacing = 8.dp
-            ) {
-                items(notes) { note ->
-                    NoteItem(
-                        note = note,
-                        onClick = { noteToEdit = note }
-                    )
+            } else {
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalItemSpacing = 8.dp,
+                    contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp)
+                ) {
+                    items(notes) { note ->
+                        NoteItem(
+                            note = note,
+                            onClick = {
+                                // Навігація до редагування
+                                navController.navigate("note_detail/${note.id}")
+                            }
+                        )
+                    }
                 }
             }
-        }
-
-        // Діалоги (створення та редагування)
-        if (showAddDialog) {
-            NoteDialog(
-                onDismiss = { showAddDialog = false },
-                onConfirm = { title, content ->
-                    viewModel.addNote(title, content)
-                    showAddDialog = false
-                }
-            )
-        }
-
-        if (noteToEdit != null) {
-            NoteDialog(
-                initialTitle = noteToEdit!!.title,
-                initialContent = noteToEdit!!.content,
-                onDismiss = { noteToEdit = null },
-                onConfirm = { title, content ->
-                    viewModel.updateNote(noteToEdit!!, title, content)
-                    noteToEdit = null
-                },
-                onDelete = {
-                    viewModel.deleteNote(noteToEdit!!)
-                    noteToEdit = null
-                }
-            )
         }
     }
 }
@@ -198,14 +184,21 @@ fun NotesScreen(viewModel: TaskViewModel) {
 @Composable
 fun NoteItem(note: Note, onClick: () -> Unit) {
     val textColor = getContrastColor(note.colorHex)
+    // Тонка рамка для білих нотаток, щоб не зливались
+    val isLightColor = note.colorHex.uppercase() in listOf("#FFFFFF", "#WHITE")
+    val border = if (isLightColor) BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f)) else null
 
     Card(
-        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(android.graphics.Color.parseColor(note.colorHex)),
+            containerColor = try { Color(android.graphics.Color.parseColor(note.colorHex)) } catch (e: Exception) { MaterialTheme.colorScheme.surface },
             contentColor = textColor
-        )
+        ),
+        border = border,
+        elevation = CardDefaults.cardElevation(0.dp) // Плаский стиль як у Keep
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             if (note.title.isNotBlank()) {
@@ -218,64 +211,14 @@ fun NoteItem(note: Note, onClick: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
             }
-            Text(
-                text = note.content,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (note.content.isNotBlank()) {
+                Text(
+                    text = note.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 10,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
-}
-
-@Composable
-fun NoteDialog(
-    initialTitle: String = "",
-    initialContent: String = "",
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-    onDelete: (() -> Unit)? = null
-) {
-    var title by remember { mutableStateOf(initialTitle) }
-    var content by remember { mutableStateOf(initialContent) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(if (onDelete == null) "Нова нотатка" else "Редагувати")
-                if (onDelete != null) {
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Заголовок") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("Зміст") },
-                    modifier = Modifier.fillMaxWidth().height(150.dp),
-                    maxLines = 10
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (title.isNotBlank() || content.isNotBlank()) {
-                    onConfirm(title, content)
-                }
-            }) { Text("Зберегти") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }
-    )
 }

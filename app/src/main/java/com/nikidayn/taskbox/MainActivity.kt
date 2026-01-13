@@ -37,11 +37,29 @@ import com.nikidayn.taskbox.ui.TemplatesScreen
 import com.nikidayn.taskbox.ui.components.*
 import com.nikidayn.taskbox.ui.theme.TaskBoxTheme
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
+// Графіка та UI
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+
+// Іконки
+import androidx.compose.material.icons.filled.ViewTimeline
+// Якщо Android Studio не бачить List, переконайтеся, що імпортуєте саме цей варіант:
+import androidx.compose.material.icons.automirrored.filled.List
+// Або, якщо ви використовуєте старішу версію Compose:
+// import androidx.compose.material.icons.filled.List
+
+// Утиліти (якщо вони не підтягнулись автоматично)
+import com.nikidayn.taskbox.utils.minutesToTime
+import com.nikidayn.taskbox.utils.formatDuration
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.ui.unit.sp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,64 +94,41 @@ fun MainAppStructure(viewModel: TaskViewModel) {
     Scaffold(
         contentWindowInsets = WindowInsets.navigationBars,
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
+            // Показуємо нижню панель тільки на головних екранах
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
 
-                NavigationBarItem(
-                    selected = currentRoute == "timeline",
-                    onClick = {
-                        navController.navigate("timeline") {
-                            popUpTo("timeline") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Календар") },
-                    label = { Text("Справи") }
-                )
-
-                NavigationBarItem(
-                    selected = currentRoute == "notes",
-                    onClick = {
-                        navController.navigate("notes") {
-                            popUpTo("timeline") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Edit, contentDescription = "Нотатки") },
-                    label = { Text("Нотатки") }
-                )
-
-                NavigationBarItem(
-                    selected = currentRoute == "templates",
-                    onClick = {
-                        navController.navigate("templates") {
-                            popUpTo("timeline") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Шаблони") },
-                    label = { Text("Шаблони") }
-                )
-
-                NavigationBarItem(
-                    selected = currentRoute == "settings",
-                    onClick = {
-                        navController.navigate("settings") {
-                            popUpTo("timeline") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Налаштування") },
-                    label = { Text("Опції") }
-                )
+            // Ховаємо навігацію, якщо ми на екрані редагування нотатки
+            if (currentRoute?.startsWith("note_detail") != true) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
+                ) {
+                    NavigationBarItem(
+                        selected = currentRoute == "timeline",
+                        onClick = { navController.navigate("timeline") { launchSingleTop = true; popUpTo("timeline") } },
+                        icon = { Icon(Icons.Default.DateRange, contentDescription = "Календар") },
+                        label = { Text("Справи") }
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == "notes",
+                        onClick = { navController.navigate("notes") { launchSingleTop = true; popUpTo("timeline") } },
+                        icon = { Icon(Icons.Default.Edit, contentDescription = "Нотатки") },
+                        label = { Text("Нотатки") }
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == "templates",
+                        onClick = { navController.navigate("templates") { launchSingleTop = true; popUpTo("timeline") } },
+                        icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Шаблони") },
+                        label = { Text("Шаблони") }
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == "settings",
+                        onClick = { navController.navigate("settings") { launchSingleTop = true; popUpTo("timeline") } },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Налаштування") },
+                        label = { Text("Опції") }
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -143,9 +138,28 @@ fun MainAppStructure(viewModel: TaskViewModel) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("timeline") { TaskScreen(viewModel) }
-            composable("notes") { com.nikidayn.taskbox.ui.NotesScreen(viewModel) }
+
+            // Передаємо navController у NotesScreen
+            composable("notes") {
+                com.nikidayn.taskbox.ui.NotesScreen(viewModel, navController)
+            }
+
             composable("templates") { TemplatesScreen(viewModel) }
             composable("settings") { SettingsScreen(viewModel) }
+
+            // НОВИЙ ЕКРАН: Деталі нотатки (на весь екран)
+            // noteId = -1 означає створення нової нотатки
+            composable(
+                route = "note_detail/{noteId}",
+                arguments = listOf(androidx.navigation.navArgument("noteId") { type = androidx.navigation.NavType.IntType })
+            ) { backStackEntry ->
+                val noteId = backStackEntry.arguments?.getInt("noteId") ?: -1
+                com.nikidayn.taskbox.ui.NoteDetailScreen(
+                    noteId = noteId,
+                    viewModel = viewModel,
+                    navController = navController
+                )
+            }
         }
     }
 }
@@ -160,6 +174,9 @@ fun TaskScreen(viewModel: TaskViewModel) {
     val startH = workHours.first.toInt()
     val endH = workHours.second.toInt()
 
+    // --- СТАН ВИГЛЯДУ (False = Таймлайн, True = Список) ---
+    var isListView by remember { mutableStateOf(false) } // <--- НОВЕ
+
     // --- ЛОГІКА СКРОЛУ ТАЙМЛАЙНУ ---
     val timelineScrollState = rememberScrollState()
     val density = LocalDensity.current
@@ -168,7 +185,7 @@ fun TaskScreen(viewModel: TaskViewModel) {
 
     // --- СТАНИ ДЛЯ DRAG & DROP ---
     var draggingTask by remember { mutableStateOf<Task?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) } // Поточна зміна позиції пальця
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
     // Координати зони Таймлайну (куди кидати)
     var dayViewBoundsInWindow by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
@@ -224,7 +241,6 @@ fun TaskScreen(viewModel: TaskViewModel) {
     var taskToEdit by remember { mutableStateOf<Task?>(null) }
     val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
-    // Головний контейнер Box, що дозволяє малювати "Примару" поверх усього
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
@@ -239,6 +255,13 @@ fun TaskScreen(viewModel: TaskViewModel) {
                         }
                     },
                     actions = {
+                        // --- КНОПКА ПЕРЕМИКАННЯ ВИГЛЯДУ ---
+                        IconButton(onClick = { isListView = !isListView }) {
+                            // Переконайтеся, що імпортували Icons.AutoMirrored.Filled.List або Icons.Default.List
+                            val icon = if (isListView) Icons.Default.ViewTimeline else Icons.AutoMirrored.Filled.List
+                            Icon(imageVector = icon, contentDescription = "Switch View")
+                        }
+
                         if (currentDate != LocalDate.now()) {
                             IconButton(onClick = {
                                 scope.launch { pagerState.animateScrollToPage(initialPage) }
@@ -292,7 +315,7 @@ fun TaskScreen(viewModel: TaskViewModel) {
                             isLocked = newIsLocked,
                             date = newDate,
                             colorHex = newColor,
-                            iconEmoji = newEmoji // <--- ЗБЕРІГАЄМО В БАЗУ ПРАВИЛЬНО
+                            iconEmoji = newEmoji
                         )
                         viewModel.updateTask(updatedTask)
                         taskToEdit = null
@@ -321,7 +344,6 @@ fun TaskScreen(viewModel: TaskViewModel) {
                     if (inboxTasks.isNotEmpty()) {
                         var isInboxExpanded by remember { mutableStateOf(true) }
 
-                        // Header
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                             modifier = Modifier
@@ -336,38 +358,18 @@ fun TaskScreen(viewModel: TaskViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.Inbox,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    Icon(Icons.Default.Inbox, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Вхідні",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    Text("Вхідні", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                                        Text(
-                                            text = "${inboxTasks.size}",
-                                            modifier = Modifier.padding(horizontal = 4.dp),
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
+                                        Text("${inboxTasks.size}", modifier = Modifier.padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                Icon(
-                                    imageVector = if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (isInboxExpanded) "Collapse" else "Expand",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Icon(if (isInboxExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
-                        // Список Вхідних з підтримкою Drag & Drop
                         AnimatedVisibility(visible = isInboxExpanded) {
                             LazyColumn(
                                 modifier = Modifier
@@ -378,44 +380,31 @@ fun TaskScreen(viewModel: TaskViewModel) {
                             ) {
                                 itemsIndexed(inboxTasks) { _, task ->
                                     val isDraggingThis = draggingTask?.id == task.id
-
-                                    // Ховаємо оригінальну картку, коли тягнемо її копію
                                     Box(modifier = Modifier.alpha(if (isDraggingThis) 0.0f else 1f)) {
                                         InboxItem(
                                             task = task,
                                             onCheck = { viewModel.toggleComplete(task) },
                                             onClick = { taskToEdit = task },
-
-                                            // --- ЛОГІКА DRAG START ---
                                             onDragStart = { _ ->
                                                 draggingTask = task
-                                                dragOffset = Offset.Zero // Скидаємо зміщення
+                                                dragOffset = Offset.Zero
                                             },
-                                            // --- ЛОГІКА DRAG MOVE ---
-                                            onDrag = { change ->
-                                                dragOffset += change
-                                            },
-                                            // --- ЛОГІКА DRAG END ---
+                                            onDrag = { change -> dragOffset += change },
                                             onDragEnd = {
-                                                val dropY = dragOffset.y
-
-                                                // Евристика: Якщо потягнули вниз більше ніж на 100px (з Вхідних на Таймлайн)
-                                                if (dropY > 100) {
-                                                    val scrollY = timelineScrollState.value.toFloat()
-
-                                                    // Розрахунок часу (приблизний, відносно верху екрану під вхідними)
-                                                    // -200 - це приблизна поправка на висоту хедера та заголовка вхідних
-                                                    val relativeDropY = dropY + scrollY - 200
-                                                    val hoursFromStart = relativeDropY / pxPerHour
-                                                    val minutesFromStart = (hoursFromStart * 60).toInt()
-
-                                                    val newStartMinutes = (startH * 60 + minutesFromStart).coerceIn(0, 1439)
-
-                                                    if (draggingTask != null) {
-                                                        viewModel.changeTaskStartTime(draggingTask!!, newStartMinutes)
+                                                // --- ВАЖЛИВО: Дозволяємо дроп на таймлайн тільки якщо він видимий ---
+                                                if (!isListView) {
+                                                    val dropY = dragOffset.y
+                                                    if (dropY > 100) {
+                                                        val scrollY = timelineScrollState.value.toFloat()
+                                                        val relativeDropY = dropY + scrollY - 200
+                                                        val hoursFromStart = relativeDropY / pxPerHour
+                                                        val minutesFromStart = (hoursFromStart * 60).toInt()
+                                                        val newStartMinutes = (startH * 60 + minutesFromStart).coerceIn(0, 1439)
+                                                        if (draggingTask != null) {
+                                                            viewModel.changeTaskStartTime(draggingTask!!, newStartMinutes)
+                                                        }
                                                     }
                                                 }
-
                                                 draggingTask = null
                                                 dragOffset = Offset.Zero
                                             }
@@ -427,38 +416,63 @@ fun TaskScreen(viewModel: TaskViewModel) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
 
-                    // --- ТАЙМЛАЙН ---
-                    DayView(
-                        tasks = timelineTasks,
-                        startHour = startH,
-                        endHour = endH,
-                        modifier = Modifier
-                            .weight(1f)
-                            .onGloballyPositioned { coordinates ->
-                                val position = coordinates.positionInWindow()
-                                val size = coordinates.size
-                                dayViewBoundsInWindow = androidx.compose.ui.geometry.Rect(
-                                    offset = position,
-                                    size = androidx.compose.ui.geometry.Size(size.width.toFloat(), size.height.toFloat())
-                                )
-                            },
-                        scrollState = timelineScrollState,
-                        onTaskCheck = { viewModel.toggleComplete(it) },
-                        onTaskClick = { taskToEdit = it },
-                        onTaskTimeChange = { task, newTime ->
-                            viewModel.changeTaskStartTime(task, newTime)
+                    // --- ПЕРЕМИКАННЯ: СПИСОК АБО ТАЙМЛАЙН ---
+                    if (isListView) {
+                        // === РЕЖИМ СПИСКУ ===
+                        if (timelineTasks.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("На сьогодні запланованих справ немає", color = Color.Gray)
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                itemsIndexed(timelineTasks) { _, task ->
+                                    ScheduledTaskListItem(
+                                        task = task,
+                                        onCheck = { viewModel.toggleComplete(task) },
+                                        onClick = { taskToEdit = task }
+                                    )
+                                }
+                                item { Spacer(modifier = Modifier.height(80.dp)) } // Відступ під FAB
+                            }
                         }
-                    )
+                    } else {
+                        // === РЕЖИМ ТАЙМЛАЙНУ (Ваш старий DayView) ===
+                        DayView(
+                            tasks = timelineTasks,
+                            startHour = startH,
+                            endHour = endH,
+                            modifier = Modifier
+                                .weight(1f)
+                                .onGloballyPositioned { coordinates ->
+                                    val position = coordinates.positionInWindow()
+                                    val size = coordinates.size
+                                    dayViewBoundsInWindow = androidx.compose.ui.geometry.Rect(
+                                        offset = position,
+                                        size = androidx.compose.ui.geometry.Size(size.width.toFloat(), size.height.toFloat())
+                                    )
+                                },
+                            scrollState = timelineScrollState,
+                            onTaskCheck = { viewModel.toggleComplete(it) },
+                            onTaskClick = { taskToEdit = it },
+                            onTaskTimeChange = { task, newTime ->
+                                viewModel.changeTaskStartTime(task, newTime)
+                            }
+                        )
+                    }
                 }
             }
         }
 
-        // --- ВІЗУАЛІЗАЦІЯ ПЕРЕТЯГУВАННЯ (GHOST CARD) ---
-        if (draggingTask != null) {
+        // --- GHOST CARD (Показуємо тільки якщо ми НЕ в режимі списку) ---
+        if (draggingTask != null && !isListView) {
             Box(
                 modifier = Modifier
                     .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
-                    .padding(start = 64.dp, top = 120.dp) // Початковий зсув, щоб картка була під пальцем
+                    .padding(start = 64.dp, top = 120.dp)
                     .width(200.dp)
             ) {
                 Card(
@@ -474,6 +488,103 @@ fun TaskScreen(viewModel: TaskViewModel) {
                         maxLines = 1
                     )
                 }
+            }
+        }
+    }
+}
+
+// === ДОДАЙТЕ ЦЮ НОВУ ФУНКЦІЮ В КІНЕЦЬ ФАЙЛУ MainActivity.kt ===
+@Composable
+fun ScheduledTaskListItem(
+    task: Task,
+    onCheck: () -> Unit,
+    onClick: () -> Unit
+) {
+    val taskColor = try {
+        Color(android.graphics.Color.parseColor(task.colorHex))
+    } catch (e: Exception) {
+        MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clickable(onClick = onClick),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Час (зліва на темнішому фоні)
+            Column(
+                modifier = Modifier
+                    .width(80.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = com.nikidayn.taskbox.utils.minutesToTime(task.startTimeMinutes ?: 0),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (task.durationMinutes > 0) {
+                    Text(
+                        text = com.nikidayn.taskbox.utils.formatDuration(task.durationMinutes),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Кольорова лінія
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(if (task.isCompleted) Color.LightGray else taskColor)
+            )
+
+            // Основна інформація
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (task.iconEmoji.isNotEmpty()) {
+                    Text(
+                        text = task.iconEmoji,
+                        fontSize = 24.sp,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                }
+
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    textDecoration = if (task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                    color = if (task.isCompleted) Color.Gray else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Checkbox(
+                    checked = task.isCompleted,
+                    onCheckedChange = { onCheck() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = taskColor,
+                        uncheckedColor = taskColor.copy(alpha = 0.5f)
+                    )
+                )
             }
         }
     }
