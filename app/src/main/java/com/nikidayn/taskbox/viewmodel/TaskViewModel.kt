@@ -108,7 +108,8 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     title = template.title,
                     durationMinutes = template.durationMinutes,
                     colorHex = template.colorHex,
-                    startTimeMinutes = null
+                    startTimeMinutes = null,
+                    iconEmoji = template.iconEmoji
                 )
             )
         }

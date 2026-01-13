@@ -26,6 +26,7 @@ import com.nikidayn.taskbox.model.TaskTemplate
 import com.nikidayn.taskbox.ui.components.ColorSelector
 import com.nikidayn.taskbox.ui.theme.getContrastColor
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
+import com.nikidayn.taskbox.ui.components.EmojiSelectorDialog
 
 @Composable
 fun TemplatesScreen(viewModel: TaskViewModel) {
@@ -204,14 +205,29 @@ fun TemplateItem(
 // Універсальний діалог для створення та редагування
 @Composable
 fun TemplateDialog(
-    template: TaskTemplate?, // Якщо null - створюємо, якщо є - редагуємо
+    template: TaskTemplate?,
     onDismiss: () -> Unit,
     onConfirm: (String, Int, String, String) -> Unit
 ) {
     var title by remember { mutableStateOf(template?.title ?: "") }
     var duration by remember { mutableStateOf(template?.durationMinutes?.toString() ?: "30") }
+
+    // Стан для смайлика та видимості діалогу
     var emoji by remember { mutableStateOf(template?.iconEmoji ?: "⚡") }
-    var selectedColor by remember { mutableStateOf(template?.colorHex ?: "#FFEB3B") } // Жовтий за замовчуванням
+    var showEmojiPicker by remember { mutableStateOf(false) } // <--- Додано
+
+    var selectedColor by remember { mutableStateOf(template?.colorHex ?: "#FFEB3B") }
+
+    // --- ВІКНО ПІКЕРА (Додано) ---
+    if (showEmojiPicker) {
+        EmojiSelectorDialog(
+            onDismiss = { showEmojiPicker = false },
+            onEmojiSelected = { selected ->
+                emoji = selected
+                showEmojiPicker = false
+            }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -236,7 +252,10 @@ fun TemplateDialog(
                 }
 
                 // Тривалість і Смайлик в один рядок
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically // Вирівнювання по центру
+                ) {
                     OutlinedTextField(
                         value = duration,
                         onValueChange = { if (it.all { c -> c.isDigit() }) duration = it },
@@ -244,12 +263,20 @@ fun TemplateDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = emoji,
-                        onValueChange = { emoji = it },
-                        label = { Text("Emoji") },
-                        modifier = Modifier.weight(1f)
-                    )
+
+                    // --- КНОПКА ВИБОРУ СМАЙЛИКА (Замість текстового поля) ---
+                    Surface(
+                        onClick = { showEmojiPicker = true },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .size(56.dp) // Висота як у TextField
+                            .weight(0.4f) // Трохи менша ширина
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = emoji, fontSize = 24.sp)
+                        }
+                    }
                 }
             }
         },

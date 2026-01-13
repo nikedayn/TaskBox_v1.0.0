@@ -11,12 +11,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.nikidayn.taskbox.utils.minutesToTime
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun AddTaskDialog(
-    selectedDate: String, // НОВИЙ ПАРАМЕТР: Дата, на яку створюємо
+    selectedDate: String, // Приходить у форматі YYYY-MM-DD
     onDismiss: () -> Unit,
-    // ОНОВЛЕНО: Повертаємо також дату (хоча вона зазвичай та сама, але для гнучкості)
     onConfirm: (title: String, duration: Int, startTime: Int?, date: String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
@@ -24,8 +25,14 @@ fun AddTaskDialog(
     var minutesText by remember { mutableStateOf("30") }
     var selectedStartTime by remember { mutableStateOf<Int?>(null) }
 
-    // Ми створюємо саме на цю дату
-    val taskDate by remember { mutableStateOf(selectedDate) }
+    // Логіка форматування дати для заголовка (YYYY-MM-DD -> dd.MM.yyyy)
+    val displayDate = remember(selectedDate) {
+        try {
+            LocalDate.parse(selectedDate).format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+        } catch (e: Exception) {
+            selectedDate // Якщо помилка, показуємо як є
+        }
+    }
 
     val context = LocalContext.current
     val showTimePicker = {
@@ -37,7 +44,8 @@ fun AddTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Справа на $taskDate") }, // Показуємо дату в заголовку
+        // Використовуємо відформатовану дату displayDate
+        title = { Text("Справа на $displayDate") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -73,7 +81,8 @@ fun AddTaskDialog(
                 val m = minutesText.toIntOrNull() ?: 0
                 val totalDuration = (h * 60) + m
                 val finalDuration = if (totalDuration > 0) totalDuration else 30
-                if (title.isNotBlank()) onConfirm(title, finalDuration, selectedStartTime, taskDate)
+                // Повертаємо оригінальну selectedDate (YYYY-MM-DD) для бази даних
+                if (title.isNotBlank()) onConfirm(title, finalDuration, selectedStartTime, selectedDate)
             }) { Text("Створити") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }
