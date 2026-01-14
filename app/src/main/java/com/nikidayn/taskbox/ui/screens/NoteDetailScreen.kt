@@ -1,4 +1,4 @@
-package com.nikidayn.taskbox.ui
+package com.nikidayn.taskbox.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -18,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.nikidayn.taskbox.model.Note
 import com.nikidayn.taskbox.viewmodel.TaskViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)

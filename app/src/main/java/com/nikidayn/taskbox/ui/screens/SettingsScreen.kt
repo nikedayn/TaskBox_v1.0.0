@@ -1,4 +1,4 @@
-package com.nikidayn.taskbox.ui
+package com.nikidayn.taskbox.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -7,7 +7,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -67,18 +66,10 @@ fun SettingsScreen(viewModel: TaskViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding(),
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        Text(
-            text = "Налаштування",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        // 1. ТЕМА
+        // ТЕМА
         SettingsSection(title = "Зовнішній вигляд") {
             Text("Тема застосунку", style = MaterialTheme.typography.titleMedium)
             Row(
@@ -91,7 +82,7 @@ fun SettingsScreen(viewModel: TaskViewModel) {
             }
         }
 
-        // 2. РОБОЧІ ГОДИНИ
+        // РОБОЧІ ГОДИНИ
         SettingsSection(title = "Робочий час") {
             Text(
                 text = "Інтервал: ${workHours.first.roundToInt()}:00 - ${workHours.second.roundToInt()}:00",
@@ -114,7 +105,7 @@ fun SettingsScreen(viewModel: TaskViewModel) {
             )
         }
 
-        // 3. ДАНІ
+        // ДАНІ
         SettingsSection(title = "Керування даними") {
             Button(
                 onClick = {
@@ -191,7 +182,7 @@ fun ThemeOption(label: String, selected: Boolean, onClick: () -> Unit) {
         onClick = onClick,
         label = { Text(label) },
         leadingIcon = if (selected) {
-            { Icon(androidx.compose.material.icons.Icons.Default.Check, null) }
+            { Icon(Icons.Default.Check, null) }
         } else null
     )
 }

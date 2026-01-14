@@ -1,4 +1,4 @@
-package com.nikidayn.taskbox.ui
+package com.nikidayn.taskbox.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -139,7 +140,7 @@ fun TemplateItem(
             containerColor = Color(android.graphics.Color.parseColor(template.colorHex)),
             contentColor = textColor
         ),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp) // Більш округлі кути
+        shape = RoundedCornerShape(16.dp) // Більш округлі кути
     ) {
         Box(
             modifier = Modifier
