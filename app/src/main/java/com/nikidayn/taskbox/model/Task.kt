@@ -17,7 +17,12 @@ data class Task(
     val linkedParentId: Int? = null,
     val isLocked: Boolean = false,
     val colorHex: String = "#FFEB3B",
-    val iconEmoji: String = "⚡"
+    val iconEmoji: String = "⚡",
+
+    // Нові поля: числа від 1 до 10
+    val importance: Int = 5,
+    val urgency: Int = 5,
+    val categoryId: Int? = null
 ) {
     val endTimeMinutes: Int?
         get() = startTimeMinutes?.plus(durationMinutes)

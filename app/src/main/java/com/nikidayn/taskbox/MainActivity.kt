@@ -14,7 +14,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List // Якщо червоне - див. пункт 2 нижче
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,8 +35,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.layout.boundsInWindow
 import com.nikidayn.taskbox.model.Task
 
+// Екрани
 import com.nikidayn.taskbox.ui.screens.NotesScreen
 import com.nikidayn.taskbox.ui.screens.SettingsScreen
+import com.nikidayn.taskbox.ui.screens.PriorityTableScreen
+import com.nikidayn.taskbox.ui.screens.TemplatesScreen
+import com.nikidayn.taskbox.ui.screens.ActivitiesScreen
 
 import com.nikidayn.taskbox.ui.components.* // Тут DayViewHourHeight та діалоги
 import com.nikidayn.taskbox.ui.screens.NoteDetailScreen
@@ -47,7 +51,6 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
-
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,7 +105,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Divider(color = MaterialTheme.colorScheme.outlineVariant) // Виправлено HorizontalDivider
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(Modifier.height(12.dp))
 
                 // === 1. КАЛЕНДАР ===
@@ -114,34 +117,43 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // === 2. НОТАТКИ (НОВИЙ ПУНКТ) ===
+                // === 2. НОТАТКИ ===
                 NavigationDrawerItem(
                     label = { Text("Нотатки") },
-                    icon = { Icon(Icons.Default.Edit, null) }, // Іконка олівця
+                    icon = { Icon(Icons.Default.Edit, null) },
                     selected = currentRoute == "notes",
                     onClick = { navigateTo("notes") },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // === 3. ДІЯЛЬНОСТІ ===
+                // === 3. ДІЯЛЬНОСТІ (Заглушка) ===
                 NavigationDrawerItem(
                     label = { Text("Діяльності") },
-                    icon = { Icon(Icons.Default.List, null) }, // Виправлено іконку
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
                     selected = currentRoute == "activities",
                     onClick = { navigateTo("activities") },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // === 4. МАТРИЦЯ ===
+                // === 4. МАТРИЦЯ (ТАБЛИЦЯ ПРІОРИТЕТІВ) ===
                 NavigationDrawerItem(
-                    label = { Text("Матриця") },
+                    label = { Text("Пріоритети") },
                     icon = { Icon(Icons.Default.GridView, null) },
                     selected = currentRoute == "matrix",
                     onClick = { navigateTo("matrix") },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // === 5. СТАТИСТИКА ===
+                // === 5. ШАБЛОНИ (Підключено) ===
+                NavigationDrawerItem(
+                    label = { Text("Шаблони") },
+                    icon = { Icon(Icons.Default.CopyAll, null) },
+                    selected = currentRoute == "templates",
+                    onClick = { navigateTo("templates") },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                // === 6. СТАТИСТИКА (Заглушка) ===
                 NavigationDrawerItem(
                     label = { Text("Статистика") },
                     icon = { Icon(Icons.Default.PieChart, null) },
@@ -153,7 +165,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 Spacer(Modifier.weight(1f))
                 Divider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                // === 6. НАЛАШТУВАННЯ ===
+                // === 7. НАЛАШТУВАННЯ ===
                 NavigationDrawerItem(
                     label = { Text("Налаштування") },
                     icon = { Icon(Icons.Default.Settings, null) },
@@ -185,7 +197,7 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 )
             }
 
-            // ДЕТАЛІ НОТАТКИ (для переходу зі списку)
+            // ДЕТАЛІ НОТАТКИ
             composable(
                 route = "note_detail/{noteId}",
                 arguments = listOf(androidx.navigation.navArgument("noteId") { type = androidx.navigation.NavType.IntType })
@@ -198,29 +210,36 @@ fun MainAppStructure(viewModel: TaskViewModel) {
                 )
             }
 
-            // ІНШІ ЕКРАНИ (Заглушки)
-            composable("activities") {
-                ScreenContainer(title = "Діяльності", onMenuClick = { scope.launch { drawerState.open() } }) {
-                    PlaceholderContent("Тут буде список діяльностей")
+            // ТАБЛИЦЯ ПРІОРИТЕТІВ
+            composable("matrix") {
+                PriorityTableScreen(
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } }
+                )
+            }
+
+            // ШАБЛОНИ (РЕАЛЬНИЙ ЕКРАН)
+            composable("templates") {
+                // Використовуємо реальний екран замість ScreenContainer+Placeholder
+                ScreenContainer(title = "Шаблони", onMenuClick = { scope.launch { drawerState.open() } }) {
+                    TemplatesScreen(viewModel = viewModel)
                 }
             }
-            composable("matrix") {
-                ScreenContainer(title = "Матриця Ейзенхауера", onMenuClick = { scope.launch { drawerState.open() } }) {
-                    PlaceholderContent("Тут буде матриця пріоритетів")
-                }
+
+            // ЗАГЛУШКИ
+            composable("activities") {
+                ActivitiesScreen( // <--- Новий екран
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } }
+                )
             }
             composable("stats") {
                 ScreenContainer(title = "Статистика", onMenuClick = { scope.launch { drawerState.open() } }) {
                     PlaceholderContent("Тут буде статистика перерозподілу часу")
                 }
             }
-            composable("templates") {
-                ScreenContainer(title = "Шаблони", onMenuClick = { scope.launch { drawerState.open() } }) {
-                    PlaceholderContent("Тут будуть картки шаблонів для нотаток і справ")
-                }
-            }
 
-            // Налаштування
+            // НАЛАШТУВАННЯ
             composable("settings") {
                 ScreenContainer(title = "Налаштування", onMenuClick = { scope.launch { drawerState.open() } }) {
                     SettingsScreen(viewModel)
@@ -230,12 +249,11 @@ fun MainAppStructure(viewModel: TaskViewModel) {
     }
 }
 
-// === ОНОВЛЕНИЙ TaskScreen (З підтримкою кнопки Меню) ===
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskScreen(
     viewModel: TaskViewModel,
-    onMenuClick: () -> Unit // <--- Додали параметр
+    onMenuClick: () -> Unit
 ) {
     val taskList by viewModel.tasks.collectAsState()
     val notesList by viewModel.notes.collectAsState()
@@ -301,7 +319,7 @@ fun TaskScreen(
                             Icon(Icons.Default.ArrowDropDown, contentDescription = "Select Date")
                         }
                     },
-                    navigationIcon = { // <--- КНОПКА БУРГЕР МЕНЮ
+                    navigationIcon = {
                         IconButton(onClick = onMenuClick) {
                             Icon(Icons.Default.Menu, contentDescription = "Меню")
                         }
@@ -325,8 +343,11 @@ fun TaskScreen(
                 }
             }
         ) { innerPadding ->
-            // ... ВМІСТ ТАКИЙ САМИЙ ЯК БУВ (ДІАЛОГИ) ...
+            // --- ДІАЛОГИ ---
             if (showAddDialog) {
+                // Якщо ваш AddTaskDialog все ще повертає 6 аргументів (з isUrgent/isImportant),
+                // використовуємо _, _ щоб їх ігнорувати.
+                // Якщо ви повернули старий AddTaskDialog (4 аргументи), приберіть ", _, _".
                 AddTaskDialog(
                     selectedDate = currentDate.toString(),
                     onDismiss = { showAddDialog = false },
@@ -374,7 +395,6 @@ fun TaskScreen(
 
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (inboxTasks.isNotEmpty()) {
-                        // ... ЛОГІКА INBOX (СКОРОЧЕНО ДЛЯ ЕКОНОМІЇ МІСЦЯ - ЗАЛИШТЕ ЯК БУЛО) ...
                         var isInboxExpanded by remember { mutableStateOf(true) }
                         Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), modifier = Modifier.fillMaxWidth().clickable { isInboxExpanded = !isInboxExpanded }) {
                             Row(modifier = Modifier.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -428,7 +448,7 @@ fun TaskScreen(
                 }
             }
         }
-        // Ghost Card logic remains...
+
         if (draggingTask != null && !isListView) {
             Box(
                 modifier = Modifier
@@ -484,7 +504,6 @@ fun PlaceholderContent(text: String) {
 
 @Composable
 fun ScheduledTaskListItem(task: Task, onCheck: () -> Unit, onClick: () -> Unit) {
-    // Копія функції з попереднього коду (список завдань)
     val taskColor = try { Color(android.graphics.Color.parseColor(task.colorHex)) } catch (e: Exception) { MaterialTheme.colorScheme.primary }
     Card(modifier = Modifier.fillMaxWidth().height(72.dp).clickable(onClick = onClick), shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), elevation = CardDefaults.cardElevation(2.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {

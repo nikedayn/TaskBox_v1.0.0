@@ -9,6 +9,7 @@ import androidx.room.Update
 import androidx.room.Transaction
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.model.Note
+import com.nikidayn.taskbox.model.Category
 import kotlinx.coroutines.flow.Flow
 import com.nikidayn.taskbox.model.TaskTemplate
 
@@ -75,5 +76,14 @@ interface TaskDao {
     @Update
     suspend fun updateTasks(tasks: List<Task>)
 
+    // --- КАТЕГОРІЇ (ДІЯЛЬНОСТІ) ---
+    @Query("SELECT * FROM categories ORDER BY id DESC")
+    fun getAllCategories(): Flow<List<Category>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCategory(category: Category)
+
+    @Delete
+    suspend fun deleteCategory(category: Category)
 
 }

@@ -1,36 +1,32 @@
 package com.nikidayn.taskbox.viewmodel
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nikidayn.taskbox.TaskBoxApplication
 import com.nikidayn.taskbox.model.Task
 import com.nikidayn.taskbox.model.Note
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import com.google.gson.Gson
+import com.nikidayn.taskbox.model.TaskTemplate
 import com.nikidayn.taskbox.model.BackupData
+import com.nikidayn.taskbox.utils.UserPreferences
+import com.nikidayn.taskbox.model.Category
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
-import kotlinx.coroutines.flow.combine
-import com.nikidayn.taskbox.model.TaskTemplate
-import com.nikidayn.taskbox.utils.UserPreferences
 
 class TaskViewModel(application: Application) : AndroidViewModel(application) {
-
 
     // 1. Стан для тексту пошуку
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
     private val dao = (application as TaskBoxApplication).database.taskDao()
     private val prefs = UserPreferences(application)
+
     val tasks: StateFlow<List<Task>> = dao.getAllTasks()
         .stateIn(
             scope = viewModelScope,
@@ -38,7 +34,14 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    fun addTask(title: String, duration: Int, startTime: Int? = null, date: String) {
+    // --- ВИПРАВЛЕНА ФУНКЦІЯ addTask ---
+    fun addTask(
+        title: String,
+        duration: Int,
+        startTime: Int? = null,
+        date: String,
+        categoryId: Int? = null // <--- Новий аргумент
+    ) {
         viewModelScope.launch {
             dao.insertTask(
                 Task(
@@ -46,7 +49,8 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     durationMinutes = duration,
                     startTimeMinutes = startTime,
                     date = date,
-                    colorHex = "#FFEB3B"
+                    colorHex = "#FFEB3B",
+                    categoryId = categoryId // <--- Передаємо
                 )
             )
         }
@@ -75,7 +79,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     val templates: StateFlow<List<TaskTemplate>> = dao.getAllTemplates()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Оновлена функція addTemplate (додано color)
     fun addTemplate(title: String, duration: Int, emoji: String, color: String = "#FFEB3B") {
         viewModelScope.launch {
             val newTemplate = TaskTemplate(
@@ -88,12 +91,9 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Нова функція updateTemplate
     fun updateTemplate(template: TaskTemplate) {
         viewModelScope.launch {
-            // У DAO має бути @Update fun updateTemplate(t: TaskTemplate)
-            // Якщо його немає, додайте його в TaskDao.kt
-            dao.insertTemplate(template) // Insert з OnConflictStrategy.REPLACE працює як Update
+            dao.insertTemplate(template)
         }
     }
 
@@ -150,7 +150,7 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (diff == 0) return@launch
 
-                // 1. Рухаємо ланцюжок (прив'язані картки)
+                // 1. Рухаємо ланцюжок
                 val processedIds = mutableSetOf<Int>()
                 fun moveTaskAndChildren(taskId: Int, timeDiff: Int) {
                     if (processedIds.contains(taskId)) return
@@ -168,81 +168,62 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 moveTaskAndChildren(currentTask.id, diff)
 
-                // 2. ФІЗИКА З УРАХУВАННЯМ "АГРЕСОРА" (Того, кого тягнуть)
+                // 2. ФІЗИКА
                 repeat(3) {
                     val sortedList = updatesMap.values
                         .filter { it.startTimeMinutes != null }
                         .sortedBy { it.startTimeMinutes }
                         .toMutableList()
 
-                    // Прохід по парах сусідів
                     for (i in 0 until sortedList.size - 1) {
-                        val top = sortedList[i]       // Верхня картка
-                        val bottom = sortedList[i + 1] // Нижня картка
+                        val top = sortedList[i]
+                        val bottom = sortedList[i + 1]
 
                         val topStart = top.startTimeMinutes ?: 0
                         val topEnd = topStart + top.durationMinutes
                         val bottomStart = bottom.startTimeMinutes ?: 0
 
-                        // Є накладання?
                         if (bottomStart < topEnd) {
                             val overlap = topEnd - bottomStart
-                            // Поріг для проходження наскрізь (50% від меншої картки)
                             val threshold = minOf(top.durationMinutes, bottom.durationMinutes) / 2
-
-                            // Визначаємо, хто "Агресор" (кого ми тягнемо)
                             val isTopAggressor = top.id == task.id
                             val isBottomAggressor = bottom.id == task.id
 
                             if (isTopAggressor) {
-                                // === ТЯГНЕМО ВЕРХНЮ ВНИЗ ===
-                                // Вона штовхає нижню.
                                 if (bottom.isLocked) {
-                                    // Нижня - стіна. Верхня відскакує назад.
                                     val correctStart = (bottomStart - top.durationMinutes).coerceAtLeast(0)
                                     val updatedTop = top.copy(startTimeMinutes = correctStart)
                                     updatesMap[top.id] = updatedTop
                                     sortedList[i] = updatedTop
                                 } else if (overlap > threshold) {
-                                    // SWAP: Нижня стрибає вгору (пропускає нас)
                                     val jumpStart = (topStart - bottom.durationMinutes).coerceAtLeast(0)
                                     val updatedBottom = bottom.copy(startTimeMinutes = jumpStart)
                                     updatesMap[bottom.id] = updatedBottom
                                     sortedList[i + 1] = updatedBottom
                                 } else {
-                                    // PUSH: Штовхаємо нижню вниз
                                     val pushStart = topEnd.coerceAtMost(1439 - bottom.durationMinutes)
                                     val updatedBottom = bottom.copy(startTimeMinutes = pushStart)
                                     updatesMap[bottom.id] = updatedBottom
                                     sortedList[i + 1] = updatedBottom
                                 }
-
                             } else if (isBottomAggressor) {
-                                // === ТЯГНЕМО НИЖНЮ ВГОРУ ===
-                                // Вона штовхає верхню.
                                 if (top.isLocked) {
-                                    // Верхня - стіна. Нижня відскакує вниз.
                                     val correctStart = (topEnd).coerceAtMost(1439 - bottom.durationMinutes)
                                     val updatedBottom = bottom.copy(startTimeMinutes = correctStart)
                                     updatesMap[bottom.id] = updatedBottom
                                     sortedList[i + 1] = updatedBottom
                                 } else if (overlap > threshold) {
-                                    // SWAP: Верхня стрибає вниз (пропускає нас)
                                     val jumpStart = (bottomStart + bottom.durationMinutes).coerceAtMost(1439 - top.durationMinutes)
                                     val updatedTop = top.copy(startTimeMinutes = jumpStart)
                                     updatesMap[top.id] = updatedTop
                                     sortedList[i] = updatedTop
                                 } else {
-                                    // PUSH: Штовхаємо верхню вгору
                                     val pushStart = (bottomStart - top.durationMinutes).coerceAtLeast(0)
                                     val updatedTop = top.copy(startTimeMinutes = pushStart)
                                     updatesMap[top.id] = updatedTop
                                     sortedList[i] = updatedTop
                                 }
-
                             } else {
-                                // === ЕФЕКТ ДОМІНО (Ніхто з них не є активним) ===
-                                // Тут працює проста гравітація: верхні тиснуть на нижніх.
                                 if (!bottom.isLocked) {
                                     val pushStart = topEnd.coerceAtMost(1439 - bottom.durationMinutes)
                                     if (pushStart != bottomStart) {
@@ -256,7 +237,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 3. Зберігаємо зміни
                 val tasksToSave = updatesMap.values.filter { t ->
                     val original = allTasks.find { it.id == t.id }
                     original?.startTimeMinutes != t.startTimeMinutes
@@ -265,7 +245,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 if (tasksToSave.isNotEmpty()) {
                     dao.updateTasks(tasksToSave.toList())
                 }
-
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -292,7 +271,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // !!! ДОДАНО ПРОПУЩЕНУ ФУНКЦІЮ !!!
     fun updateNote(note: Note, title: String, content: String) {
         viewModelScope.launch {
             dao.updateNote(note.copy(title = title, content = content))
@@ -303,26 +281,22 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { dao.deleteNote(note) }
     }
 
-    // 2. Метод для зміни тексту пошуку
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
     }
 
-    // НОВЕ: Прив'язати існуючу нотатку до завдання
     fun linkNote(note: Note, taskId: Int) {
         viewModelScope.launch {
             dao.updateNote(note.copy(taskId = taskId))
         }
     }
 
-    // НОВЕ: Відв'язати нотатку
     fun unlinkNote(note: Note) {
         viewModelScope.launch {
             dao.updateNote(note.copy(taskId = null))
         }
     }
 
-    // Функція оновлення завдання (для MainActivity)
     fun updateTask(task: Task) {
         viewModelScope.launch {
             dao.updateTask(task)
@@ -330,7 +304,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // --- НАЛАШТУВАННЯ ---
-
     private val _themeMode = MutableStateFlow(prefs.getThemeMode())
     val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
 
@@ -349,7 +322,6 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // --- РОБОТА З ДАНИМИ ---
-
     fun deleteAllData() {
         viewModelScope.launch {
             dao.clearAllData()
@@ -384,5 +356,31 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) { onError() }
             }
         }
+    }
+
+    // --- ОНОВЛЕННЯ ПРІОРИТЕТІВ (НОВЕ) ---
+    fun updateTaskPriorities(task: Task, newUrgency: Int, newImportance: Int) {
+        viewModelScope.launch {
+            // Обмежуємо значення від 1 до 10
+            val safeUrgency = newUrgency.coerceIn(1, 10)
+            val safeImportance = newImportance.coerceIn(1, 10)
+
+            dao.updateTask(task.copy(urgency = safeUrgency, importance = safeImportance))
+        }
+    }
+
+    // 1. Потік категорій
+    val categories: StateFlow<List<Category>> = dao.getAllCategories()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 2. Методи керування
+    fun addCategory(name: String, color: String, emoji: String) {
+        viewModelScope.launch {
+            dao.insertCategory(Category(name = name, colorHex = color, iconEmoji = emoji))
+        }
+    }
+
+    fun deleteCategory(category: Category) {
+        viewModelScope.launch { dao.deleteCategory(category) }
     }
 }

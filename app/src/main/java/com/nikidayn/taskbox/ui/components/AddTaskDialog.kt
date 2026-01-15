@@ -1,32 +1,28 @@
 package com.nikidayn.taskbox.ui.components
 
 import android.app.TimePickerDialog
+import android.widget.NumberPicker
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.nikidayn.taskbox.utils.minutesToTime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import androidx.compose.ui.viewinterop.AndroidView // Якщо не імпортувалося автоматично
-import android.widget.NumberPicker
 
 @Composable
 fun AddTaskDialog(
     selectedDate: String,
     onDismiss: () -> Unit,
+    // 👇 ЗМІНЕНО: Прибрали isUrgent та isImportant з аргументів
     onConfirm: (title: String, duration: Int, startTime: Int?, date: String) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-
-    // 👇 ЗМІНЕНО: Замість hoursText/minutesText використовуємо одне число
     var durationMinutes by remember { mutableStateOf(30) }
-
     var selectedStartTime by remember { mutableStateOf<Int?>(null) }
 
     val displayDate = remember(selectedDate) {
@@ -51,24 +47,46 @@ fun AddTaskDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value = title, onValueChange = { title = it },
-                    label = { Text("Назва справи") }, modifier = Modifier.fillMaxWidth()
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Назва справи") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
-                // 👇 ВСТАВЛЕНО: Новий компонент вибору "барабаном"
-                Text("Тривалість:", style = MaterialTheme.typography.labelMedium)
-                DurationWheelPicker(
-                    durationMinutes = durationMinutes,
-                    onDurationChange = { durationMinutes = it }
-                )
-                // 👆 КІНЕЦЬ ЗМІН
-
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = if (selectedStartTime != null) "Початок: ${minutesToTime(selectedStartTime!!)}" else "Без часу (у Вхідні)")
-                    TextButton(onClick = showTimePicker) { Text(if (selectedStartTime != null) "Змінити" else "Вибрати час") }
+                // Секція вибору тривалості
+                Text("Тривалість (хв):", style = MaterialTheme.typography.labelMedium)
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    DurationWheelPicker(
+                        durationMinutes = durationMinutes,
+                        onDurationChange = { durationMinutes = it }
+                    )
                 }
+
+                Divider()
+
+                // Секція вибору часу
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (selectedStartTime != null)
+                            "Початок: ${minutesToTime(selectedStartTime!!)}"
+                        else "Без часу (у Вхідні)",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    TextButton(onClick = showTimePicker) {
+                        Text(if (selectedStartTime != null) "Змінити" else "Вибрати час")
+                    }
+                }
+
                 if (selectedStartTime != null) {
-                    TextButton(onClick = { selectedStartTime = null }, modifier = Modifier.align(Alignment.End)) {
+                    TextButton(
+                        onClick = { selectedStartTime = null },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
                         Text("Прибрати час", color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -76,11 +94,15 @@ fun AddTaskDialog(
         },
         confirmButton = {
             Button(onClick = {
-                // Якщо 0 хвилин, ставимо 30 за замовчуванням
                 val finalDuration = if (durationMinutes > 0) durationMinutes else 30
-                if (title.isNotBlank()) onConfirm(title, finalDuration, selectedStartTime, selectedDate)
+                if (title.isNotBlank()) {
+                    // 👇 Передаємо тільки 4 параметри
+                    onConfirm(title, finalDuration, selectedStartTime, selectedDate)
+                }
             }) { Text("Створити") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } }
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Скасувати") }
+        }
     )
 }
